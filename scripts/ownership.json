@@ -1,0 +1,25 @@
+{
+  "track-a-ai": [
+    "backend/ai/"
+  ],
+  "track-b-backend": [
+    "backend/server/"
+  ],
+  "track-c-viva": [
+    "app/lib/viva/",
+    "app/test/viva/"
+  ],
+  "track-d-report": [
+    "app/lib/report_teacher/",
+    "app/test/report_teacher/",
+    "app/android/",
+    "app/web/",
+    "app/BUILD.md"
+  ],
+  "track-e-testing": [
+    "testing/"
+  ],
+  "track-f-pitch": [
+    "pitch/"
+  ]
+}
