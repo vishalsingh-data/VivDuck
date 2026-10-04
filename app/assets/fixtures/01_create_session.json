@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CreateSessionRequest",
+  "description": "Request body for POST /session – starts a new viva or report session.",
+  "type": "object",
+  "required": ["student_id", "topic"],
+  "properties": {
+    "student_id": {
+      "type": "string",
+      "description": "Unique identifier for the student.",
+      "example": "stu_abc123"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Topic or module the session covers.",
+      "example": "Binary Search"
+    },
+    "sample_id": {
+      "type": "string",
+      "description": "Optional identifier of a pre-loaded sample submission to use as the session's starting code or answer.",
+      "example": "binary_search"
+    }
+  },
+  "additionalProperties": false
+}

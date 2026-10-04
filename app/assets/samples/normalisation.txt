@@ -1,0 +1,17 @@
+Normalisation is the process of organising a relational database to reduce
+redundancy and improve data integrity. It is carried out in stages called
+normal forms.
+
+First Normal Form (1NF) requires that every column holds atomic values,
+meaning each cell contains only one piece of data. There should be no
+repeating groups or arrays within a single column.
+
+Second Normal Form (2NF) builds on 1NF by eliminating partial dependencies.
+Every non-key attribute must depend on the whole of the primary key, not just
+part of it. This is only relevant when a composite primary key is used.
+
+Third Normal Form (3NF) removes transitive dependencies. A non-key attribute
+must not depend on another non-key attribute; it must depend directly on the
+primary key. Achieving 3NF ensures that changing one piece of data does not
+cause unintended changes elsewhere in the table, making the database easier
+to maintain and less prone to update anomalies.
