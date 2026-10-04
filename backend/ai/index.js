@@ -20,24 +20,81 @@ const FIXED_QUESTIONS = [
   },
 ];
 
-// ── buildReport example return ────────────────────────────────────────────────
-// NOTE: shared/contracts/03_report.json does not exist yet in this repo;
-// the shape below mirrors the summary written into state by nextTurn and
-// the evaluation fields from 04_evaluation_result.json.
+// ── Report example — embedded from shared/contracts/03_report.json ────────────
+// Do NOT read the contracts folder at runtime; values are inlined here.
 const REPORT_EXAMPLE = {
+  session_id: 's_k3f9',
+  title: 'Binary search',
   score_before: 54,
   score_after: 79,
   bloom_reached: 'Analyse',
   trap_caught: true,
+  trap_explanation:
+    'The student correctly identified that (lo + hi) / 2 can overflow in fixed-width integer languages.',
   weakest_key_point: 'Off-by-one and mid-point edge cases',
-  rubric_id: null,
-  assessment: [
-    { key_point_id: 'kp_correctness', status: 'met' },
-    { key_point_id: 'kp_edge_cases',  status: 'partial' },
-    { key_point_id: 'kp_complexity',  status: 'met' },
-    { key_point_id: 'kp_trap',        status: 'caught' },
+  key_points: [
+    {
+      id: 'kp1',
+      statement: 'The input array must be sorted for binary search to work correctly.',
+      status: 'solid',
+      evidence_quote:
+        'It would not work correctly on an unsorted array — the halving logic assumes order.',
+    },
+    {
+      id: 'kp2',
+      statement: 'The lo and hi pointers shrink the search window on every iteration.',
+      status: 'solid',
+      evidence_quote: 'lo = mid + 1 and hi = mid - 1 move the window closer each time.',
+    },
+    {
+      id: 'kp3',
+      statement: 'The midpoint value is compared with the target to decide which half to search.',
+      status: 'partial',
+      evidence_quote: "I compare arr[mid] to the target, but I wasn't sure about the equal case.",
+    },
+    {
+      id: 'kp4',
+      statement: 'The loop continues while lo is less than or equal to hi.',
+      status: 'missing',
+      evidence_quote: null,
+    },
+    {
+      id: 'kp5',
+      statement: 'The function returns -1 when the target is not found.',
+      status: 'solid',
+      evidence_quote: 'It returns -1 when the loop ends without finding the target.',
+    },
+    {
+      id: 'kp6',
+      statement: 'Binary search runs in O(log n) time.',
+      status: 'partial',
+      evidence_quote:
+        "I think it's log n because we halve the list each time, but I couldn't prove it.",
+    },
   ],
+  strengths: [
+    'Correctly implemented the iterative loop with shrinking bounds.',
+    'Identified that an unsorted input breaks the algorithm.',
+    'Caught the integer-overflow trap for fixed-width languages.',
+  ],
+  gaps: [
+    'Could not articulate the loop-termination condition (lo <= hi) unprompted.',
+    'Incomplete explanation of the midpoint comparison for the equal case.',
+    'Did not state the O(log n) time complexity without prompting.',
+  ],
+  review_next: [
+    'Loop invariants and termination conditions in binary search.',
+    'Formal proof of O(log n) complexity.',
+    'Edge cases: empty array, single-element array, duplicate values.',
+  ],
+  paste_flags: 0,
 };
+
+// Assessment list derived from key_points in the report example above.
+const REPORT_ASSESSMENT = REPORT_EXAMPLE.key_points.map(({ id, status }) => ({
+  key_point_id: id,
+  status,
+}));
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -84,12 +141,7 @@ export async function nextTurn(state, studentText) {
         trap_caught: true,
         weakest_key_point: 'Off-by-one and mid-point edge cases',
         rubric_id: state.sampleId ?? null,
-        assessment: [
-          { key_point_id: 'kp_correctness', status: 'met' },
-          { key_point_id: 'kp_edge_cases',  status: 'partial' },
-          { key_point_id: 'kp_complexity',  status: 'met' },
-          { key_point_id: 'kp_trap',        status: 'caught' },
-        ],
+        assessment: REPORT_ASSESSMENT,
       },
     };
     return { state: finalState, question: null, questionType: null, round: nextRound, done: true };
@@ -104,13 +156,13 @@ export async function nextTurn(state, studentText) {
 /**
  * Build the final report for the session.
  * @param {object} state - Completed session state (after done === true).
- * @returns {object} Report response object.
+ * @returns {object} Report response object matching shared/contracts/03_report.json.
  */
 export async function buildReport(state) {
-  // Return state.summary if populated, otherwise fall back to the static example.
+  // Return the full report example with session_id and rubric_id resolved from state.
   return {
     ...REPORT_EXAMPLE,
-    ...(state.summary ?? {}),
-    rubric_id: state.sampleId ?? REPORT_EXAMPLE.rubric_id,
+    session_id: state.sessionId ?? REPORT_EXAMPLE.session_id,
+    rubric_id: state.sampleId ?? null,
   };
 }

@@ -1,6 +1,6 @@
-// smoke_test.mjs - verifies startSession + nextTurn stub behaviour
+// smoke_test.mjs - verifies startSession + nextTurn + buildReport stub behaviour
 // Usage: node smoke_test.mjs  (run from backend/)
-import { startSession, nextTurn } from './ai/index.js';
+import { startSession, nextTurn, buildReport } from './ai/index.js';
 
 const SAMPLE_CODE = `def binary_search(arr, target):
     lo, hi = 0, len(arr) - 1
@@ -44,3 +44,11 @@ for (let i = 0; i < 4; i++) {
   console.log('done:', result.done);
   console.log('');
 }
+
+// Call buildReport after the session is done
+const report = await buildReport(state);
+console.log('--- buildReport ---');
+console.log('score_before:', report.score_before);
+console.log('score_after:', report.score_after);
+console.log('key_points count:', report.key_points.length);
+console.log('');
