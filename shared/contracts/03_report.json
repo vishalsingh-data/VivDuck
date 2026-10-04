@@ -1,0 +1,74 @@
+{
+  "title": "Get Report",
+  "method": "GET",
+  "path": "/sessions/{session_id}/report",
+  "response": {
+    "session_id": "s_k3f9",
+    "title": "Binary search",
+    "score_before": 54,
+    "score_after": 79,
+    "bloom_reached": "Analyse",
+    "trap_caught": true,
+    "trap_explanation": "The student correctly identified that (lo + hi) / 2 can overflow in fixed-width integer languages.",
+    "weakest_key_point": "Off-by-one and mid-point edge cases",
+    "key_points": [
+      {
+        "id": "kp1",
+        "statement": "The input array must be sorted for binary search to work correctly.",
+        "status": "solid",
+        "evidence_quote": "It would not work correctly on an unsorted array — the halving logic assumes order."
+      },
+      {
+        "id": "kp2",
+        "statement": "The lo and hi pointers shrink the search window on every iteration.",
+        "status": "solid",
+        "evidence_quote": "lo = mid + 1 and hi = mid - 1 move the window closer each time."
+      },
+      {
+        "id": "kp3",
+        "statement": "The midpoint value is compared with the target to decide which half to search.",
+        "status": "partial",
+        "evidence_quote": "I compare arr[mid] to the target, but I wasn't sure about the equal case."
+      },
+      {
+        "id": "kp4",
+        "statement": "The loop continues while lo is less than or equal to hi.",
+        "status": "missing",
+        "evidence_quote": null
+      },
+      {
+        "id": "kp5",
+        "statement": "The function returns -1 when the target is not found.",
+        "status": "solid",
+        "evidence_quote": "It returns -1 when the loop ends without finding the target."
+      },
+      {
+        "id": "kp6",
+        "statement": "Binary search runs in O(log n) time.",
+        "status": "partial",
+        "evidence_quote": "I think it's log n because we halve the list each time, but I couldn't prove it."
+      }
+    ],
+    "strengths": [
+      "Correctly implemented the iterative loop with shrinking bounds.",
+      "Identified that an unsorted input breaks the algorithm.",
+      "Caught the integer-overflow trap for fixed-width languages."
+    ],
+    "gaps": [
+      "Could not articulate the loop-termination condition (lo <= hi) unprompted.",
+      "Incomplete explanation of the midpoint comparison for the equal case.",
+      "Did not state the O(log n) time complexity without prompting."
+    ],
+    "review_next": [
+      "Loop invariants and termination conditions in binary search.",
+      "Formal proof of O(log n) complexity.",
+      "Edge cases: empty array, single-element array, duplicate values."
+    ],
+    "paste_flags": 0
+  },
+  "errors": [
+    { "status": 404, "meaning": "Unknown session", "body": { "error": "session not found" } },
+    { "status": 409, "meaning": "Viva not finished yet — report not available", "body": { "error": "viva is still in progress" } },
+    { "status": 502, "meaning": "Upstream AI service unavailable", "body": { "error": "The duck is having trouble thinking. Please try again." } }
+  ]
+}

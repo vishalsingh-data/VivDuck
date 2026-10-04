@@ -1,25 +1,20 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "CreateSessionRequest",
-  "description": "Request body for POST /session – starts a new viva or report session.",
-  "type": "object",
-  "required": ["student_id", "topic"],
-  "properties": {
-    "student_id": {
-      "type": "string",
-      "description": "Unique identifier for the student.",
-      "example": "stu_abc123"
-    },
-    "topic": {
-      "type": "string",
-      "description": "Topic or module the session covers.",
-      "example": "Binary Search"
-    },
-    "sample_id": {
-      "type": "string",
-      "description": "Optional identifier of a pre-loaded sample submission to use as the session's starting code or answer.",
-      "example": "binary_search"
-    }
+  "title": "Create Session",
+  "method": "POST",
+  "path": "/sessions",
+  "request": {
+    "student_name": "Alice Nguyen",
+    "title": "Binary search",
+    "kind": "code",
+    "submission": "def binary_search(arr, target):\n    lo, hi = 0, len(arr) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n",
+    "language": "python",
+    "sample_id": "binary_search"
   },
-  "additionalProperties": false
+  "response": {
+    "session_id": "s_k3f9"
+  },
+  "errors": [
+    { "status": 400, "meaning": "Bad input — missing or invalid field", "body": { "error": "request body is invalid" } },
+    { "status": 502, "meaning": "Upstream AI service unavailable", "body": { "error": "The duck is having trouble thinking. Please try again." } }
+  ]
 }

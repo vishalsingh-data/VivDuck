@@ -1,0 +1,84 @@
+{
+  "title": "Teacher Summary",
+  "method": "GET",
+  "path": "/teacher/summary",
+  "response": {
+    "assignment": "Binary search",
+    "sessions": [
+      {
+        "session_id": "s_a1b2",
+        "student": "Jordan Lee",
+        "score_before": 61,
+        "score_after": 75,
+        "bloom_reached": "Apply",
+        "trap_caught": false,
+        "weakest_key_point": "O(log n) time complexity",
+        "sample": true,
+        "finished_at": "2026-10-01T09:14:00Z"
+      },
+      {
+        "session_id": "s_c3d4",
+        "student": "Priya Sharma",
+        "score_before": 45,
+        "score_after": 68,
+        "bloom_reached": "Understand",
+        "trap_caught": false,
+        "weakest_key_point": "Loop termination condition",
+        "sample": true,
+        "finished_at": "2026-10-01T10:02:00Z"
+      },
+      {
+        "session_id": "s_e5f6",
+        "student": "Marcus Webb",
+        "score_before": 70,
+        "score_after": 88,
+        "bloom_reached": "Analyse",
+        "trap_caught": true,
+        "weakest_key_point": "Midpoint comparison for the equal case",
+        "sample": true,
+        "finished_at": "2026-10-02T08:45:00Z"
+      },
+      {
+        "session_id": "s_g7h8",
+        "student": "Sofia Reyes",
+        "score_before": 50,
+        "score_after": 63,
+        "bloom_reached": "Understand",
+        "trap_caught": false,
+        "weakest_key_point": "Loop termination condition",
+        "sample": true,
+        "finished_at": "2026-10-02T14:30:00Z"
+      },
+      {
+        "session_id": "s_i9j0",
+        "student": "Tariq Osei",
+        "score_before": 66,
+        "score_after": 80,
+        "bloom_reached": "Apply",
+        "trap_caught": true,
+        "weakest_key_point": "O(log n) time complexity",
+        "sample": true,
+        "finished_at": "2026-10-03T11:20:00Z"
+      },
+      {
+        "session_id": "s_k3f9",
+        "student": "Alice Nguyen",
+        "score_before": 54,
+        "score_after": 79,
+        "bloom_reached": "Analyse",
+        "trap_caught": true,
+        "weakest_key_point": "Off-by-one and mid-point edge cases",
+        "sample": false,
+        "finished_at": "2026-10-04T17:55:00Z"
+      }
+    ],
+    "weak_concepts": [
+      { "concept": "Loop termination condition", "count": 2, "total": 6 },
+      { "concept": "O(log n) time complexity", "count": 2, "total": 6 },
+      { "concept": "Midpoint comparison for the equal case", "count": 1, "total": 6 }
+    ]
+  },
+  "errors": [
+    { "status": 502, "meaning": "Upstream AI service unavailable", "body": { "error": "The duck is having trouble thinking. Please try again." } }
+  ]
+}
