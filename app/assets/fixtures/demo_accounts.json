@@ -1,0 +1,7 @@
+{
+  "_comment": "Demo-mode accounts only (no API_BASE_URL). Not used by the real backend.",
+  "accounts": [
+    { "id": "u_demo_s", "name": "Alice Nguyen", "email": "student@vivduck.test", "password": "quack-quack-1", "role": "student" },
+    { "id": "u_demo_t", "name": "Ms. Rivera", "email": "teacher@vivduck.test", "password": "quack-quack-1", "role": "teacher" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Log In",
+  "method": "POST",
+  "path": "/auth/login",
+  "request": {
+    "email": "alice@example.com",
+    "password": "at-least-8-chars"
+  },
+  "response": {
+    "token": "tok_3f9a1c",
+    "user": {
+      "id": "u_a1b2",
+      "name": "Alice Nguyen",
+      "email": "alice@example.com",
+      "role": "student"
+    }
+  },
+  "errors": [
+    { "status": 400, "meaning": "Bad input — missing or invalid field", "body": { "error": "request body is invalid" } },
+    { "status": 401, "meaning": "Wrong email or password", "body": { "error": "That email and password don't match." } }
+  ]
+}

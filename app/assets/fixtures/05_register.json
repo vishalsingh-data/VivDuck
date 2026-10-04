@@ -1,0 +1,25 @@
+{
+  "title": "Register",
+  "method": "POST",
+  "path": "/auth/register",
+  "request": {
+    "name": "Alice Nguyen",
+    "email": "alice@example.com",
+    "password": "at-least-8-chars",
+    "role": "student"
+  },
+  "response": {
+    "token": "tok_3f9a1c",
+    "user": {
+      "id": "u_a1b2",
+      "name": "Alice Nguyen",
+      "email": "alice@example.com",
+      "role": "student"
+    }
+  },
+  "notes": "role is \"student\" or \"teacher\". password must be at least 8 characters. Send the token on later requests as: Authorization: Bearer <token>.",
+  "errors": [
+    { "status": 400, "meaning": "Bad input — missing or invalid field", "body": { "error": "request body is invalid" } },
+    { "status": 409, "meaning": "Email already registered", "body": { "error": "An account with this email already exists." } }
+  ]
+}
