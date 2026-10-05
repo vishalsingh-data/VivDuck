@@ -11,6 +11,8 @@ import '../core/widgets.dart';
 import '../viva/submit_screen.dart';
 import 'charts.dart';
 import 'teacher_screen.dart';
+import 'widgets/bloom_badge.dart';
+import 'widgets/key_point_tile.dart';
 
 class ReportScreen extends StatefulWidget {
   final String sessionId;
@@ -314,7 +316,7 @@ class _ScoreCard extends StatelessWidget {
     final ring = ScoreRing(
       before: report.scoreBefore,
       after: report.scoreAfter,
-      size: phone ? 170 : 190,
+      size: phone ? 150 : 160,
     );
     final legend = Column(
       crossAxisAlignment: phone
@@ -322,8 +324,13 @@ class _ScoreCard extends StatelessWidget {
           : CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text('Understanding score', style: context.text.titleLarge),
-        const SizedBox(height: 14),
+        Text(
+          'Understanding score',
+          style: context.text.titleLarge,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 12),
         _Legend(
           color: VD.inkSoft,
           label: 'Before the viva',
@@ -335,7 +342,7 @@ class _ScoreCard extends StatelessWidget {
           label: 'After the viva',
           value: report.scoreAfter,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         Pill(
           '${gain >= 0 ? '+' : ''}$gain points',
           color: gain >= 0 ? VD.solid : VD.missing,
@@ -354,13 +361,13 @@ class _ScoreCard extends StatelessWidget {
       ],
     );
     return VDCard(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       child: phone
           ? Column(children: [ring, const SizedBox(height: 20), legend])
           : Row(
               children: [
                 ring,
-                const SizedBox(width: 28),
+                const SizedBox(width: 16),
                 Expanded(child: legend),
               ],
             ),
@@ -381,7 +388,6 @@ class _Legend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 10,
@@ -389,11 +395,17 @@ class _Legend extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 8),
-        Text(
-          label,
-          style: TextStyle(color: context.inkSoft, fontWeight: FontWeight.w600),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: context.inkSoft,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         CountUp(
           value,
           style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
@@ -448,6 +460,8 @@ class _BloomCard extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 14),
+          BloomBadge(level),
           const SizedBox(height: 14),
           BloomLadder(reached: level),
         ],
@@ -623,7 +637,7 @@ class _KeyPointsCardState extends State<_KeyPointsCard> {
                     key: ValueKey(shown[i].id),
                     delay: Duration(milliseconds: 60 * i),
                     from: const Offset(0.04, 0),
-                    child: _KeyPointTile(kp: shown[i]),
+                    child: KeyPointTile(shown[i]),
                   ),
               ],
             ),
@@ -666,104 +680,6 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _KeyPointTile extends StatefulWidget {
-  final KeyPoint kp;
-  const _KeyPointTile({required this.kp});
-
-  @override
-  State<_KeyPointTile> createState() => _KeyPointTileState();
-}
-
-class _KeyPointTileState extends State<_KeyPointTile> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final kp = widget.kp;
-    final c = statusColor(kp.status);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Material(
-        color: context.bg,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => setState(() => _open = !_open),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(statusIcon(kp.status), color: c, size: 22),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        kp.statement,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (!context.isPhone)
-                      Pill(statusLabel(kp.status), color: c),
-                    AnimatedRotation(
-                      turns: _open ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
-                      child: Icon(
-                        Icons.expand_more_rounded,
-                        color: context.inkSoft,
-                      ),
-                    ),
-                  ],
-                ),
-                AnimatedCrossFade(
-                  duration: const Duration(milliseconds: 220),
-                  crossFadeState: _open
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  firstChild: const SizedBox(width: double.infinity),
-                  secondChild: Padding(
-                    padding: const EdgeInsets.only(left: 32, top: 10),
-                    child: kp.evidenceQuote == null
-                        ? Text(
-                            "You didn't mention this one. Worth adding to your review list.",
-                            style: TextStyle(
-                              color: context.inkSoft,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          )
-                        : Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                left: BorderSide(color: c, width: 3),
-                              ),
-                            ),
-                            child: Text(
-                              '“${kp.evidenceQuote}”',
-                              style: TextStyle(
-                                color: context.inkSoft,
-                                fontStyle: FontStyle.italic,
-                                height: 1.5,
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _Takeaways extends StatelessWidget {
   final Report report;
