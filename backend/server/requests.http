@@ -1,0 +1,33 @@
+### Create a session
+POST http://localhost:8000/sessions
+Content-Type: application/json
+
+{
+  "student_name": "Alice Nguyen",
+  "title": "Binary search",
+  "kind": "code",
+  "submission": "def binary_search(arr, target):\n    lo, hi = 0, len(arr) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n",
+  "language": "python",
+  "sample_id": "binary_search"
+}
+
+###
+
+### Submit a turn (replace session_id)
+POST http://localhost:8000/sessions/s_example/turn
+Content-Type: application/json
+
+{
+  "text": "It returns -1 when the loop ends without finding the target.",
+  "pasted": true
+}
+
+###
+
+### Get Report (replace session_id)
+GET http://localhost:8000/sessions/s_example/report
+
+###
+
+### Get Teacher Summary
+GET http://localhost:8000/teacher/summary
