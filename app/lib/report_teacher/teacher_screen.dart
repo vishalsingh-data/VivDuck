@@ -879,19 +879,17 @@ class _SessionSheet extends StatelessWidget {
               ),
             ),
           ),
-          if (!s.sample) ...[
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(
-                  context,
-                ).push(vdRoute(ReportScreen(sessionId: s.sessionId)));
-              },
-              icon: const Icon(Icons.description_rounded),
-              label: const Text('Open full report'),
-            ),
-          ],
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.of(
+                context,
+              ).push(vdRoute(ReportScreen(sessionId: s.sessionId)));
+            },
+            icon: const Icon(Icons.description_rounded),
+            label: const Text('Open full report'),
+          ),
         ],
       ),
     );
