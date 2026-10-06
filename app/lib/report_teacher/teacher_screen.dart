@@ -1,26 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-import '../core/api.dart';
 import '../core/duck.dart';
-import '../core/effects.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import '../home/home_screen.dart';
 import 'charts.dart';
 import 'report_screen.dart';
 
+/// Teacher Dashboard screen presenting class-wide viva performance,
+/// understanding progress, trap defense stats, individual student records,
+/// and where the class is weakest.
 class TeacherScreen extends StatefulWidget {
-  const TeacherScreen({super.key});
+  final Future<TeacherSummary>? summaryFuture;
+  const TeacherScreen({super.key, this.summaryFuture});
 
   @override
   State<TeacherScreen> createState() => _TeacherScreenState();
 }
 
 class _TeacherScreenState extends State<TeacherScreen> {
-  late Future<TeacherSummary> _future = VivaApi.instance.getTeacherSummary();
+  late Future<TeacherSummary> _future =
+      widget.summaryFuture ?? createApi().getTeacherSummary();
 
-  void _refresh() =>
-      setState(() => _future = VivaApi.instance.getTeacherSummary());
+  void _refresh() {
+    setState(() {
+      _future = widget.summaryFuture ?? createApi().getTeacherSummary();
+    });
+  }
+
+  void _goToStudentView(BuildContext context) {
+    try {
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    } catch (_) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      } else {
+        Navigator.of(context).pushAndRemoveUntil(
+          vdRoute(const HomeScreen()),
+          (route) => false,
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +53,9 @@ class _TeacherScreenState extends State<TeacherScreen> {
           future: _future,
           builder: (context, snap) {
             final Widget body;
+            final bool hasSample =
+                snap.hasData && snap.data!.sessions.any((s) => s.sample);
+
             if (snap.hasError) {
               body = ErrorState(
                 message: snap.error.toString(),
@@ -40,26 +66,24 @@ class _TeacherScreenState extends State<TeacherScreen> {
                 child: Duck(size: 120, mood: DuckMood.thinking),
               );
             } else {
-              body = _Dashboard(summary: snap.data!);
+              body = _TeacherDashboard(
+                summary: snap.data!,
+                onRefresh: _refresh,
+              );
             }
+
             return Column(
               children: [
                 PageBody(
-                  child: VDTopBar(
-                    showBack: true,
-                    actions: [
-                      IconButton(
-                        tooltip: 'Refresh',
-                        onPressed: _refresh,
-                        icon: const Icon(Icons.refresh_rounded),
-                      ),
-                      const ThemeToggle(),
-                    ],
+                  child: _TeacherHeader(
+                    hasSample: hasSample,
+                    onStudentView: () => _goToStudentView(context),
+                    onRefresh: _refresh,
                   ),
                 ),
                 Expanded(
                   child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 350),
+                    duration: const Duration(milliseconds: 300),
                     child: body,
                   ),
                 ),
@@ -72,96 +96,203 @@ class _TeacherScreenState extends State<TeacherScreen> {
   }
 }
 
-enum _Sort { recent, name, after, gain }
+// ── 1. Header with "Student view" & "Sample class data" chip ─────────────────
 
-class _Dashboard extends StatefulWidget {
-  final TeacherSummary summary;
-  const _Dashboard({required this.summary});
+class _TeacherHeader extends StatelessWidget {
+  final bool hasSample;
+  final VoidCallback onStudentView;
+  final VoidCallback onRefresh;
+
+  const _TeacherHeader({
+    required this.hasSample,
+    required this.onStudentView,
+    required this.onRefresh,
+  });
 
   @override
-  State<_Dashboard> createState() => _DashboardState();
+  Widget build(BuildContext context) {
+    final phone = context.isPhone;
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: phone ? 8 : 16),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        runAlignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (Navigator.of(context).canPop())
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: IconButton(
+                    tooltip: 'Back',
+                    visualDensity: VisualDensity.compact,
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: EdgeInsets.zero,
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.arrow_back_rounded, size: 20),
+                  ),
+                ),
+              GestureDetector(
+                onTap: onStudentView,
+                child: Logo(size: phone ? 28 : 38),
+              ),
+              if (hasSample && !phone) ...[
+                const SizedBox(width: 14),
+                const _SampleChip(),
+              ],
+            ],
+          ),
+          if (hasSample && phone) const _SampleChip(),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: onRefresh,
+                visualDensity: VisualDensity.compact,
+                constraints:
+                    const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+              ),
+              const ThemeToggle(),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                onPressed: onStudentView,
+                icon: const Icon(Icons.school_outlined, size: 16),
+                label: const Text('Student view'),
+                style: OutlinedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: phone ? 10 : 14,
+                    vertical: 8,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _DashboardState extends State<_Dashboard> {
-  String _query = '';
-  _Sort _sort = _Sort.recent;
-  bool _hideSamples = false;
+class _SampleChip extends StatelessWidget {
+  const _SampleChip();
 
-  List<SessionSummary> get _visible {
-    final q = _query.toLowerCase();
-    final list = widget.summary.sessions
-        .where((s) => !_hideSamples || !s.sample)
-        .where(
-          (s) =>
-              q.isEmpty ||
-              s.student.toLowerCase().contains(q) ||
-              s.weakestKeyPoint.toLowerCase().contains(q),
-        )
-        .toList();
-    list.sort(switch (_sort) {
-      _Sort.recent => (a, b) => b.finishedAt.compareTo(a.finishedAt),
-      _Sort.name => (a, b) => a.student.compareTo(b.student),
-      _Sort.after => (a, b) => b.scoreAfter.compareTo(a.scoreAfter),
-      _Sort.gain => (a, b) => b.gain.compareTo(a.gain),
-    });
-    return list;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: VD.tealSoft.withValues(alpha: context.isDark ? 0.25 : 0.8),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(
+          color: VD.teal.withValues(alpha: 0.35),
+          width: 1.2,
+        ),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.science_outlined, size: 14, color: VD.teal),
+          SizedBox(width: 5),
+          Text(
+            'Sample class data',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: VD.teal,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
   }
+}
+
+// ── 2. Dashboard Body ────────────────────────────────────────────────────────
+
+class _TeacherDashboard extends StatefulWidget {
+  final TeacherSummary summary;
+  final VoidCallback onRefresh;
+
+  const _TeacherDashboard({
+    required this.summary,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_TeacherDashboard> createState() => _TeacherDashboardState();
+}
+
+class _TeacherDashboardState extends State<_TeacherDashboard> {
+  String _filter = '';
 
   @override
   Widget build(BuildContext context) {
     final s = widget.summary;
     final sessions = s.sessions;
     final n = sessions.length;
-    double avg(int Function(SessionSummary) f) =>
-        n == 0 ? 0 : sessions.map(f).reduce((a, b) => a + b) / n;
-    final trapPct = n == 0
-        ? 0
-        : sessions.where((x) => x.trapCaught).length / n * 100;
-    final desktop = context.isDesktop;
 
-    final tiles = [
-      _Kpi(
-        icon: Icons.groups_rounded,
-        color: VD.ink,
-        label: 'Students',
-        value: n,
-      ),
-      _Kpi(
-        icon: Icons.speed_rounded,
-        color: VD.orange,
-        label: 'Avg score after',
-        value: avg((x) => x.scoreAfter).round(),
-      ),
-      _Kpi(
-        icon: Icons.trending_up_rounded,
-        color: VD.solid,
-        label: 'Avg gain',
-        value: avg((x) => x.gain).round(),
-        prefix: '+',
-      ),
-      _Kpi(
-        icon: Icons.shield_rounded,
-        color: VD.teal,
-        label: 'Caught the trap',
-        value: trapPct.round(),
-        suffix: '%',
-      ),
-    ];
+    // ── 3. Three Tiles Computation ───────────────────────────────────────────
+    final avgBefore = n == 0
+        ? 0
+        : (sessions.map((x) => x.scoreBefore).reduce((a, b) => a + b) / n)
+            .round();
+    final avgAfter = n == 0
+        ? 0
+        : (sessions.map((x) => x.scoreAfter).reduce((a, b) => a + b) / n)
+            .round();
+    final trapCaughtCount = sessions.where((x) => x.trapCaught).length;
+    final analyseCount = sessions
+        .where((x) => bloomIndex(x.bloomReached) >= bloomIndex('Analyse'))
+        .length;
+
+    // ── Find newest session that is not a sample ─────────────────────────────
+    SessionSummary? newestNonSample;
+    final nonSamples = sessions.where((x) => !x.sample).toList();
+    if (nonSamples.isNotEmpty) {
+      nonSamples.sort((a, b) => b.finishedAt.compareTo(a.finishedAt));
+      newestNonSample = nonSamples.first;
+    }
+
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isWide = screenWidth > 900;
+
+    // Filtered list for search if user types
+    final q = _filter.trim().toLowerCase();
+    final visibleSessions = q.isEmpty
+        ? sessions
+        : sessions
+            .where((x) =>
+                x.student.toLowerCase().contains(q) ||
+                x.weakestKeyPoint.toLowerCase().contains(q))
+            .toList();
 
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       child: PageBody(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const SizedBox(height: 12),
+            // ── 2. Title: assignment & "N students have defended their submission" ──
             FadeSlideIn(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'CLASS DASHBOARD',
+                    'CLASS REPORT',
                     style: TextStyle(
                       fontSize: 12,
-                      letterSpacing: 1,
+                      letterSpacing: 1.2,
                       fontWeight: FontWeight.w800,
                       color: context.inkSoft,
                     ),
@@ -169,85 +300,83 @@ class _DashboardState extends State<_Dashboard> {
                   const SizedBox(height: 4),
                   Text(
                     s.assignment,
-                    style: context.isPhone
-                        ? context.text.headlineMedium
-                        : context.text.displaySmall,
+                    style: (context.isPhone
+                            ? context.text.headlineMedium
+                            : context.text.displaySmall)
+                        ?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$n ${n == 1 ? "student has" : "students have"} defended their submission',
+                    style: TextStyle(
+                      fontSize: context.isPhone ? 15 : 17,
+                      fontWeight: FontWeight.w600,
+                      color: context.inkSoft,
+                    ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            LayoutBuilder(
-              builder: (context, c) {
-                final cols = c.maxWidth < 560 ? 2 : 4;
-                final w = (c.maxWidth - (cols - 1) * 14) / cols;
-                return Wrap(
-                  spacing: 14,
-                  runSpacing: 14,
-                  children: [
-                    for (var i = 0; i < tiles.length; i++)
-                      SizedBox(
-                        width: w,
-                        child: FadeSlideIn(
-                          delay: Duration(milliseconds: 60 * i),
-                          child: tiles[i],
-                        ),
-                      ),
-                  ],
-                );
-              },
+            const SizedBox(height: 24),
+
+            // ── 3. Three Tiles ───────────────────────────────────────────────
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 100),
+              child: _ThreeMetricTiles(
+                avgBefore: avgBefore,
+                avgAfter: avgAfter,
+                trapCaughtCount: trapCaughtCount,
+                analyseCount: analyseCount,
+                totalStudents: n,
+              ),
             ),
-            const SizedBox(height: 20),
-            if (desktop)
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(child: _WeakConcepts(items: s.weakConcepts)),
-                    const SizedBox(width: 20),
-                    Expanded(child: _BloomSpread(sessions: sessions)),
-                  ],
-                ),
-              )
-            else ...[
-              _WeakConcepts(items: s.weakConcepts),
-              const SizedBox(height: 20),
-              _BloomSpread(sessions: sessions),
-            ],
-            const SizedBox(height: 20),
-            VDCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _SessionsToolbar(
-                    query: _query,
-                    sort: _sort,
-                    hideSamples: _hideSamples,
-                    onQuery: (v) => setState(() => _query = v),
-                    onSort: (v) => setState(() => _sort = v),
-                    onHideSamples: (v) => setState(() => _hideSamples = v),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_visible.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Center(
-                        child: Text(
-                          'No students match.',
-                          style: TextStyle(color: context.inkSoft),
+            const SizedBox(height: 28),
+
+            // ── 4 & 5. Table & Dark Card (Side by side > 900 px, stacked <= 900 px) ──
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 200),
+              child: isWide
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 11,
+                          child: _TableCard(
+                            sessions: visibleSessions,
+                            newestNonSample: newestNonSample,
+                            onFilter: (v) => setState(() => _filter = v),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 20),
+                        Expanded(
+                          flex: 7,
+                          child: _WeakestDarkCard(
+                            weakConcepts: s.weakConcepts,
+                            sessions: sessions,
+                          ),
+                        ),
+                      ],
                     )
-                  else if (context.isPhone)
-                    for (final x in _visible) _SessionCard(session: x)
-                  else ...[
-                    const _TableHeader(),
-                    for (final x in _visible) _SessionRow(session: x),
-                  ],
-                ],
-              ),
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _TableCard(
+                          sessions: visibleSessions,
+                          newestNonSample: newestNonSample,
+                          onFilter: (v) => setState(() => _filter = v),
+                        ),
+                        const SizedBox(height: 24),
+                        _WeakestDarkCard(
+                          weakConcepts: s.weakConcepts,
+                          sessions: sessions,
+                        ),
+                      ],
+                    ),
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 48),
           ],
         ),
       ),
@@ -255,42 +384,140 @@ class _DashboardState extends State<_Dashboard> {
   }
 }
 
-class _Kpi extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String label, prefix, suffix;
-  final num value;
-  const _Kpi({
-    required this.icon,
-    required this.color,
-    required this.label,
-    required this.value,
-    this.prefix = '',
-    this.suffix = '',
+// ── 3. Three Tiles Widget ────────────────────────────────────────────────────
+
+class _ThreeMetricTiles extends StatelessWidget {
+  final int avgBefore;
+  final int avgAfter;
+  final int trapCaughtCount;
+  final int analyseCount;
+  final int totalStudents;
+
+  const _ThreeMetricTiles({
+    required this.avgBefore,
+    required this.avgAfter,
+    required this.trapCaughtCount,
+    required this.analyseCount,
+    required this.totalStudents,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = color == VD.ink ? context.ink : color;
+    final gain = avgAfter - avgBefore;
+    final tile1 = _Tile(
+      icon: Icons.trending_up_rounded,
+      color: VD.orange,
+      label: 'Average understanding',
+      value: '$avgBefore → $avgAfter',
+      subtitle: 'before to after (${gain >= 0 ? "+$gain" : "$gain"} pts)',
+    );
+
+    final tile2 = _Tile(
+      icon: Icons.shield_rounded,
+      color: VD.solid,
+      label: 'Caught the trap',
+      value: '$trapCaughtCount of $totalStudents',
+      subtitle: totalStudents == 0
+          ? '0%'
+          : '${(trapCaughtCount / totalStudents * 100).round()}% protected',
+    );
+
+    final tile3 = _Tile(
+      icon: Icons.psychology_rounded,
+      color: VD.teal,
+      label: 'Reached Analyse',
+      value: '$analyseCount of $totalStudents',
+      subtitle: "Bloom's taxonomy level 4+",
+    );
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        if (c.maxWidth < 640) {
+          return Column(
+            children: [
+              tile1,
+              const SizedBox(height: 12),
+              tile2,
+              const SizedBox(height: 12),
+              tile3,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: tile1),
+            const SizedBox(width: 14),
+            Expanded(child: tile2),
+            const SizedBox(width: 14),
+            Expanded(child: tile3),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Tile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String value;
+  final String subtitle;
+
+  const _Tile({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.value,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return VDCard(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: c),
-          const SizedBox(height: 10),
-          CountUp(
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: context.isDark ? 0.22 : 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const Spacer(),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
             value,
-            prefix: prefix,
-            suffix: suffix,
-            style: context.text.headlineLarge?.copyWith(height: 1),
+            style: GoogleFonts.fredoka(
+              fontSize: 26,
+              fontWeight: FontWeight.w600,
+              color: context.ink,
+              height: 1.1,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: context.ink,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 12,
               color: context.inkSoft,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -299,513 +526,603 @@ class _Kpi extends StatelessWidget {
   }
 }
 
-class _WeakConcepts extends StatelessWidget {
-  final List<WeakConcept> items;
-  const _WeakConcepts({required this.items});
+// ── 4. The Students Table ────────────────────────────────────────────────────
+
+class _TableCard extends StatelessWidget {
+  final List<SessionSummary> sessions;
+  final SessionSummary? newestNonSample;
+  final ValueChanged<String> onFilter;
+
+  const _TableCard({
+    required this.sessions,
+    required this.newestNonSample,
+    required this.onFilter,
+  });
 
   @override
   Widget build(BuildContext context) {
     return VDCard(
+      padding: const EdgeInsets.all(18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Where the class is stuck', style: context.text.titleLarge),
-          const SizedBox(height: 4),
-          Text(
-            'Concepts that came up as a weakest point.',
-            style: TextStyle(color: context.inkSoft),
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  'Student submissions',
+                  style: context.text.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: context.isDark
+                      ? VD.darkLine
+                      : context.line.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  '${sessions.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: context.inkSoft,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
+          // Horizontal scroll container so it works on phone (390 px) and any narrow screen
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: 760,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _TableHead(),
+                  const Divider(height: 1),
+                  if (sessions.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Center(
+                        child: Text(
+                          'No student submissions found.',
+                          style: TextStyle(color: context.inkSoft),
+                        ),
+                      ),
+                    )
+                  else
+                    for (final s in sessions)
+                      _TableRow(
+                        session: s,
+                        isJustFinished: newestNonSample != null &&
+                            s.sessionId == newestNonSample!.sessionId,
+                      ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TableHead extends StatelessWidget {
+  const _TableHead();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: 11.5,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0.6,
+      color: context.inkSoft,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Row(
+        children: [
+          SizedBox(width: 200, child: Text('STUDENT', style: style)),
+          SizedBox(width: 155, child: Text('UNDERSTANDING', style: style)),
+          SizedBox(width: 110, child: Text('LEVEL REACHED', style: style)),
+          SizedBox(width: 110, child: Text('TRAP', style: style)),
+          Expanded(child: Text('WEAKEST POINT', style: style)),
+        ],
+      ),
+    );
+  }
+}
+
+class _TableRow extends StatefulWidget {
+  final SessionSummary session;
+  final bool isJustFinished;
+
+  const _TableRow({
+    required this.session,
+    required this.isJustFinished,
+  });
+
+  @override
+  State<_TableRow> createState() => _TableRowState();
+}
+
+class _TableRowState extends State<_TableRow> {
+  bool _hover = false;
+
+  void _open(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: context.surface,
+      constraints: const BoxConstraints(maxWidth: 560),
+      builder: (c) => _StudentReportSheet(session: widget.session),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.session;
+    final isJf = widget.isJustFinished;
+
+    final bg = isJf
+        ? (context.isDark
+            ? const Color(0xFF1E382B)
+            : const Color(0xFFE8F5E9))
+        : (_hover
+            ? (context.isDark ? VD.darkLine : const Color(0xFFF7F4EB))
+            : Colors.transparent);
+
+    final border = isJf
+        ? Border.all(color: VD.solid, width: 1.5)
+        : Border(top: BorderSide(color: context.line.withValues(alpha: 0.6)));
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => _open(context),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          margin: EdgeInsets.symmetric(vertical: isJf ? 3 : 0),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(isJf ? 10 : 0),
+            border: border,
+          ),
+          child: Row(
+            children: [
+              // 1. Student column (Name + Avatar + "Just finished" badge)
+              SizedBox(
+                width: 200,
+                child: Row(
+                  children: [
+                    _StudentAvatar(name: s.student),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  s.student,
+                                  style: TextStyle(
+                                    fontWeight: isJf
+                                        ? FontWeight.w900
+                                        : FontWeight.w700,
+                                    fontSize: 13.5,
+                                    color: context.ink,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (isJf) ...[
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: VD.solid,
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.fiber_manual_record,
+                                    size: 7,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    'Just finished',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ] else if (s.sample) ...[
+                            Text(
+                              'Sample',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: context.inkSoft,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 2. Understanding column (before to after, with thin bar for after score)
+              SizedBox(
+                width: 155,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${s.scoreBefore} → ${s.scoreAfter}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: context.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      // Thin bar for the after score
+                      SizedBox(
+                        height: 5,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(99),
+                          child: LinearProgressIndicator(
+                            value: (s.scoreAfter / 100).clamp(0.0, 1.0),
+                            backgroundColor: context.line,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              VD.orange,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 3. Level reached column
+              SizedBox(
+                width: 110,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: VD.teal.withValues(
+                        alpha: context.isDark ? 0.25 : 0.12,
+                      ),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      s.bloomReached,
+                      style: const TextStyle(
+                        color: VD.teal,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // 4. Trap column (Caught or Missed, with an icon)
+              SizedBox(
+                width: 110,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      s.trapCaught
+                          ? Icons.shield_rounded
+                          : Icons.warning_amber_rounded,
+                      color: s.trapCaught ? VD.solid : VD.missing,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      s.trapCaught ? 'Caught' : 'Missed',
+                      style: TextStyle(
+                        color: s.trapCaught ? VD.solid : VD.missing,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 5. Weakest point column
+              Expanded(
+                child: Text(
+                  s.weakestKeyPoint,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.inkSoft,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentAvatar extends StatelessWidget {
+  final String name;
+  const _StudentAvatar({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = name
+        .split(' ')
+        .where((p) => p.isNotEmpty)
+        .take(2)
+        .map((p) => p[0])
+        .join();
+    final hue = (name.hashCode.abs() % 360).toDouble();
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: HSLColor.fromAHSL(
+        1,
+        hue,
+        0.55,
+        context.isDark ? 0.35 : 0.82,
+      ).toColor(),
+      child: Text(
+        initials,
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: 11.5,
+          color: context.isDark ? Colors.white : VD.ink,
+        ),
+      ),
+    );
+  }
+}
+
+// ── 5. Dark Card: "Where the class is weakest" ───────────────────────────────
+
+class _WeakestDarkCard extends StatelessWidget {
+  final List<WeakConcept> weakConcepts;
+  final List<SessionSummary> sessions;
+
+  const _WeakestDarkCard({
+    required this.weakConcepts,
+    required this.sessions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // If weakConcepts is empty from server/fixture, compute from sessions
+    List<WeakConcept> items = weakConcepts;
+    if (items.isEmpty && sessions.isNotEmpty) {
+      final counts = <String, int>{};
+      for (final s in sessions) {
+        counts[s.weakestKeyPoint] = (counts[s.weakestKeyPoint] ?? 0) + 1;
+      }
+      final sorted = counts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      items = [
+        for (final e in sorted.take(3))
+          WeakConcept(
+            concept: e.key,
+            count: e.value,
+            total: sessions.length,
+          ),
+      ];
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF14192A), // Dark card background in both modes
+        borderRadius: BorderRadius.circular(VD.radius),
+        border: Border.all(
+          color: const Color(0xFF28314E),
+          width: 1.5,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: VD.missing.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.report_problem_rounded,
+                  color: VD.missing,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Where the class is weakest',
+                  style: GoogleFonts.fredoka(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Concepts that proved hardest for students to defend under questioning.',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Color(0xFFA3ABC6),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 20),
+
           if (items.isEmpty)
-            Text('Nothing yet.', style: TextStyle(color: context.inkSoft))
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'No weak concepts recorded yet.',
+                style: TextStyle(color: Color(0xFFA3ABC6)),
+              ),
+            )
           else
-            for (var i = 0; i < items.length; i++)
+            for (var i = 0; i < items.length; i++) ...[
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Text(
                             items[i].concept,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 10),
                         Text(
                           '${items[i].count} of ${items[i].total}',
-                          style: TextStyle(
-                            color: context.inkSoft,
+                          style: const TextStyle(
+                            color: Color(0xFFCBD2E6),
                             fontWeight: FontWeight.w800,
+                            fontSize: 13,
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    GrowBar(
-                      value: items[i].total == 0
-                          ? 0
-                          : items[i].count / items[i].total,
-                      color: i == 0 ? VD.missing : VD.partial,
-                      delay: Duration(milliseconds: 120 * i),
+                    // One bar per weak concept
+                    SizedBox(
+                      height: 8,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: LinearProgressIndicator(
+                          value: items[i].total == 0
+                              ? 0.0
+                              : (items[i].count / items[i].total)
+                                  .clamp(0.0, 1.0),
+                          backgroundColor: const Color(0xFF252D47),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            i == 0
+                                ? VD.missing
+                                : (i == 1 ? VD.partial : VD.orange),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BloomSpread extends StatelessWidget {
-  final List<SessionSummary> sessions;
-  const _BloomSpread({required this.sessions});
-
-  @override
-  Widget build(BuildContext context) {
-    final counts = List.filled(bloomLevels.length, 0);
-    for (final s in sessions) {
-      counts[bloomIndex(s.bloomReached)]++;
-    }
-    final maxC = counts.fold(1, (a, b) => a > b ? a : b);
-    return VDCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Bloom's levels reached", style: context.text.titleLarge),
-          const SizedBox(height: 4),
-          Text(
-            'How deep each student got.',
-            style: TextStyle(color: context.inkSoft),
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 170,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (var i = 0; i < bloomLevels.length; i++)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text(
-                            '${counts[i]}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: counts[i] == 0
-                                  ? context.inkSoft
-                                  : context.ink,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          TweenAnimationBuilder<double>(
-                            tween: Tween(begin: 0, end: counts[i] / maxC),
-                            duration: Duration(milliseconds: 700 + i * 90),
-                            curve: Curves.easeOutBack,
-                            builder: (_, v, _) => Container(
-                              height: 4 + 110 * v.clamp(0, 1.1),
-                              decoration: BoxDecoration(
-                                color: counts[i] == 0
-                                    ? context.line
-                                    : VD.teal.withValues(
-                                        alpha: 0.35 + i * 0.12,
-                                      ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          FittedBox(
-                            child: Text(
-                              bloomLevels[i],
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: context.inkSoft,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SessionsToolbar extends StatelessWidget {
-  final String query;
-  final _Sort sort;
-  final bool hideSamples;
-  final ValueChanged<String> onQuery;
-  final ValueChanged<_Sort> onSort;
-  final ValueChanged<bool> onHideSamples;
-
-  const _SessionsToolbar({
-    required this.query,
-    required this.sort,
-    required this.hideSamples,
-    required this.onQuery,
-    required this.onSort,
-    required this.onHideSamples,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final search = TextField(
-      onChanged: onQuery,
-      decoration: const InputDecoration(
-        hintText: 'Search students or concepts',
-        prefixIcon: Icon(Icons.search_rounded),
-        isDense: true,
-      ),
-    );
-    final sortMenu = PopupMenuButton<_Sort>(
-      tooltip: 'Sort',
-      initialValue: sort,
-      onSelected: onSort,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: _Sort.recent, child: Text('Most recent')),
-        PopupMenuItem(value: _Sort.name, child: Text('Name')),
-        PopupMenuItem(value: _Sort.after, child: Text('Score after')),
-        PopupMenuItem(value: _Sort.gain, child: Text('Biggest gain')),
-      ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.sort_rounded, color: context.inkSoft),
-            const SizedBox(width: 4),
-            Text(switch (sort) {
-              _Sort.recent => 'Recent',
-              _Sort.name => 'Name',
-              _Sort.after => 'Score',
-              _Sort.gain => 'Gain',
-            }, style: const TextStyle(fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
-    );
-    final samples = FilterChip(
-      label: const Text('Hide samples'),
-      selected: hideSamples,
-      onSelected: onHideSamples,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
-    );
-
-    if (context.isPhone) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Students', style: context.text.titleLarge),
-          const SizedBox(height: 12),
-          search,
-          const SizedBox(height: 8),
-          Row(children: [samples, const Spacer(), sortMenu]),
-        ],
-      );
-    }
-    return Row(
-      children: [
-        Text('Students', style: context.text.titleLarge),
-        const SizedBox(width: 20),
-        Expanded(child: search),
-        const SizedBox(width: 12),
-        samples,
-        const SizedBox(width: 4),
-        sortMenu,
-      ],
-    );
-  }
-}
-
-class _TableHeader extends StatelessWidget {
-  const _TableHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: 12,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0.6,
-      color: context.inkSoft,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          Expanded(flex: 3, child: Text('STUDENT', style: style)),
-          Expanded(flex: 3, child: Text('SCORE', style: style)),
-          Expanded(flex: 2, child: Text('BLOOM', style: style)),
-          SizedBox(width: 56, child: Text('TRAP', style: style)),
-          Expanded(flex: 4, child: Text('WEAKEST POINT', style: style)),
-        ],
-      ),
-    );
-  }
-}
-
-void _openSession(BuildContext context, SessionSummary s) {
-  showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    backgroundColor: context.surface,
-    constraints: const BoxConstraints(maxWidth: 560),
-    builder: (c) => _SessionSheet(session: s),
-  );
-}
-
-class _SessionRow extends StatefulWidget {
-  final SessionSummary session;
-  const _SessionRow({required this.session});
-
-  @override
-  State<_SessionRow> createState() => _SessionRowState();
-}
-
-class _SessionRowState extends State<_SessionRow> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = widget.session;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: () => _openSession(context, s),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          decoration: BoxDecoration(
-            color: _hover ? context.bg : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: Border(top: BorderSide(color: context.line)),
-          ),
-          child: Row(
-            children: [
-              Expanded(flex: 3, child: _NameCell(session: s)),
-              Expanded(
-                flex: 3,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 20),
-                  child: _ScoreCell(session: s),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Pill(s.bloomReached, color: VD.teal),
-                ),
-              ),
-              SizedBox(width: 56, child: _TrapIcon(caught: s.trapCaught)),
-              Expanded(
-                flex: 4,
-                child: Text(
-                  s.weakestKeyPoint,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: context.inkSoft),
-                ),
-              ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
-class _SessionCard extends StatelessWidget {
-  final SessionSummary session;
-  const _SessionCard({required this.session});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = session;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Material(
-        color: context.bg,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _openSession(context, s),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
+          const SizedBox(height: 6),
+          // The required line: "This shows what each student could explain. What it means is the teacher's call."
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.09),
+                width: 1,
+              ),
+            ),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(child: _NameCell(session: s)),
-                    _TrapIcon(caught: s.trapCaught),
-                  ],
+                Icon(
+                  Icons.lightbulb_outline_rounded,
+                  size: 16,
+                  color: VD.yellow,
                 ),
-                const SizedBox(height: 12),
-                _ScoreCell(session: s),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Pill(s.bloomReached, color: VD.teal),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        s.weakestKeyPoint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: context.inkSoft, fontSize: 13),
-                      ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'This shows what each student could explain. What it means is the teacher\'s call.',
+                    style: TextStyle(
+                      color: Color(0xFFCBD2E8),
+                      fontSize: 12.5,
+                      height: 1.4,
+                      fontStyle: FontStyle.italic,
                     ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NameCell extends StatelessWidget {
-  final SessionSummary session;
-  const _NameCell({required this.session});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = session;
-    final initials = s.student
-        .split(' ')
-        .where((p) => p.isNotEmpty)
-        .take(2)
-        .map((p) => p[0])
-        .join();
-    final hue = (s.student.hashCode % 360).toDouble();
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: HSLColor.fromAHSL(
-            1,
-            hue,
-            0.6,
-            context.isDark ? 0.35 : 0.85,
-          ).toColor(),
-          child: Text(
-            initials,
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
-              color: context.isDark ? Colors.white : VD.ink,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                s.student,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              Text(
-                s.sample
-                    ? 'Sample · ${_ago(s.finishedAt)}'
-                    : _ago(s.finishedAt),
-                style: TextStyle(fontSize: 12, color: context.inkSoft),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-String _ago(DateTime t) {
-  final d = DateTime.now().toUtc().difference(t.toUtc());
-  if (d.inMinutes < 1) return 'just now';
-  if (d.inHours < 1) return '${d.inMinutes}m ago';
-  if (d.inDays < 1) return '${d.inHours}h ago';
-  if (d.inDays < 30) return '${d.inDays}d ago';
-  return '${t.day}/${t.month}/${t.year}';
-}
-
-class _ScoreCell extends StatelessWidget {
-  final SessionSummary session;
-  const _ScoreCell({required this.session});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = session;
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 10,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: GrowBar(value: s.scoreAfter / 100, color: VD.orange),
-                ),
-                Positioned.fill(
-                  child: GrowBar(
-                    value: s.scoreBefore / 100,
-                    color: context.inkSoft.withValues(alpha: 0.6),
-                    track: Colors.transparent,
                   ),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          '${s.scoreBefore} → ${s.scoreAfter}',
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-        ),
-      ],
-    );
-  }
-}
-
-class _TrapIcon extends StatelessWidget {
-  final bool caught;
-  const _TrapIcon({required this.caught});
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: caught ? 'Caught the trap' : 'Missed the trap',
-      child: Icon(
-        caught ? Icons.shield_rounded : Icons.warning_amber_rounded,
-        color: caught ? VD.solid : VD.missing,
-        size: 22,
+        ],
       ),
     );
   }
 }
 
-class _SessionSheet extends StatelessWidget {
+// ── Student Detail Sheet ─────────────────────────────────────────────────────
+
+class _StudentReportSheet extends StatelessWidget {
   final SessionSummary session;
-  const _SessionSheet({required this.session});
+  const _StudentReportSheet({required this.session});
 
   @override
   Widget build(BuildContext context) {
@@ -816,11 +1133,37 @@ class _SessionSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _NameCell(session: s),
+          Row(
+            children: [
+              _StudentAvatar(name: s.student),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      s.student,
+                      style: context.text.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      s.sample ? 'Sample student' : 'Live submission',
+                      style: TextStyle(color: context.inkSoft, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 20),
           Row(
             children: [
-              ScoreRing(before: s.scoreBefore, after: s.scoreAfter, size: 120),
+              ScoreRing(
+                before: s.scoreBefore,
+                after: s.scoreAfter,
+                size: 110,
+              ),
               const SizedBox(width: 20),
               Expanded(
                 child: Column(
@@ -828,7 +1171,9 @@ class _SessionSheet extends StatelessWidget {
                   children: [
                     Text(
                       '${s.scoreBefore} → ${s.scoreAfter}',
-                      style: context.text.headlineSmall,
+                      style: context.text.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Pill(
@@ -879,13 +1224,13 @@ class _SessionSheet extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: () {
               Navigator.of(context).pop();
-              Navigator.of(
-                context,
-              ).push(vdRoute(ReportScreen(sessionId: s.sessionId)));
+              Navigator.of(context).push(
+                vdRoute(ReportScreen(sessionId: s.sessionId)),
+              );
             },
             icon: const Icon(Icons.description_rounded),
             label: const Text('Open full report'),

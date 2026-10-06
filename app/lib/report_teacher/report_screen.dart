@@ -44,8 +44,17 @@ class _FixtureVivaApi implements VivaApi {
       VivaApi.instance.submitTurn(sessionId, text, pasted: pasted);
 
   @override
-  Future<TeacherSummary> getTeacherSummary() =>
-      VivaApi.instance.getTeacherSummary();
+  Future<TeacherSummary> getTeacherSummary() async {
+    try {
+      return await VivaApi.instance.getTeacherSummary();
+    } catch (_) {
+      final raw =
+          await rootBundle.loadString('assets/fixtures/04_teacher_summary.json');
+      final j = (jsonDecode(raw) as Map<String, dynamic>)['response']
+          as Map<String, dynamic>;
+      return TeacherSummary.fromJson(j);
+    }
+  }
 
   @override
   Future<Report> getReport(String sessionId) async {
@@ -79,7 +88,17 @@ class _FixtureFallbackVivaApi implements VivaApi {
       _inner.submitTurn(sessionId, text, pasted: pasted);
 
   @override
-  Future<TeacherSummary> getTeacherSummary() => _inner.getTeacherSummary();
+  Future<TeacherSummary> getTeacherSummary() async {
+    try {
+      return await _inner.getTeacherSummary();
+    } catch (_) {
+      final raw =
+          await rootBundle.loadString('assets/fixtures/04_teacher_summary.json');
+      final j = (jsonDecode(raw) as Map<String, dynamic>)['response']
+          as Map<String, dynamic>;
+      return TeacherSummary.fromJson(j);
+    }
+  }
 
   @override
   Future<Report> getReport(String sessionId) async {
