@@ -22,21 +22,25 @@ async function generateWithTimeout(ai, model, contents) {
     ai.models.generateContent({
       model,
       contents,
+      config: {
+        responseMimeType: 'application/json',
+      },
     }),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('LLM request timed out after 45 seconds')), TIMEOUT_MS)
+      setTimeout(
+        () =>
+          reject(
+            new Error('LLM request timed out after 45 seconds')
+          ),
+        TIMEOUT_MS
+      )
     ),
   ]);
 }
 
 /**
  * Call Gemini and return validated JSON.
- *
  * @param {object} options
- * @param {string} options.system - System instruction.
- * @param {string} options.user - User prompt.
- * @param {{ parse: (value: unknown) => any }} options.schema - Zod schema.
- * @returns {Promise<any>}
  */
 export async function callJson({ system, user, schema }) {
   const { apiKey, model } = getConfig();
@@ -51,7 +55,11 @@ export async function callJson({ system, user, schema }) {
           role: 'user',
           parts: [
             {
-              text: `${system}\n\nReturn ONLY valid JSON.\n\n${user}`,
+              text: `${system}
+
+Return ONLY valid JSON.
+
+${user}`,
             },
           ],
         },
@@ -81,5 +89,7 @@ export async function callJson({ system, user, schema }) {
     }
   }
 
-  throw new Error(`LLM JSON request failed: ${lastError?.message ?? 'unknown error'}`);
+  throw new Error(
+    `LLM JSON request failed: ${lastError?.message ?? 'unknown error'}`
+  );
 }
