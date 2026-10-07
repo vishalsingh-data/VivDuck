@@ -1,0 +1,20 @@
+# Render blueprint: New > Blueprint, pick this repo, paste your Gemini key.
+services:
+  - type: web
+    name: vivduck
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: LLM_API_KEY
+        sync: false
+      - key: TEACHER_INVITE_CODE
+        sync: false
+      - key: LLM_MODEL
+        value: gemini-flash-latest
+    # The free plan has no disk, so sessions reset on each deploy or restart.
+    # On a paid plan, uncomment to keep them:
+    # disk:
+    #   name: vivduck-data
+    #   mountPath: /data
+    #   sizeGB: 1

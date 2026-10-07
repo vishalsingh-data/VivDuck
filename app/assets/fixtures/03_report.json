@@ -2,73 +2,107 @@
   "title": "Get Report",
   "method": "GET",
   "path": "/sessions/{session_id}/report",
+  "notes": "score_before is the rubric grade of the written answer (the mean of grading_runs). score_after re-grades the same rubric using the answer plus the three follow-up answers; points can only go up. Quotes may come from the answer or a follow-up answer. Returns 409 until the third follow-up is answered.",
   "response": {
     "session_id": "s_k3f9",
+    "question_id": "binary_search",
     "title": "Binary search",
-    "score_before": 54,
-    "score_after": 79,
+    "question_prompt": "Explain how binary search finds a value in a list. Say why the list must be sorted, how the search range changes at each step, when the search stops, and how fast it is.",
+    "answer_text": "Binary search only works on a sorted list. It looks at the middle element and compares it with the target. If the target is bigger it throws away the left half, otherwise the right half. It keeps halving until it finds the value or there is nothing left, so it takes about log n steps.",
+    "source": "typed",
+    "score_before": 76,
+    "score_after": 85,
+    "grading_runs": [
+      74,
+      78
+    ],
+    "review": {
+      "needs_review": false,
+      "reasons": []
+    },
     "bloom_reached": "Analyse",
     "trap_caught": true,
-    "trap_explanation": "The student correctly identified that (lo + hi) / 2 can overflow in fixed-width integer languages.",
-    "weakest_key_point": "Off-by-one and mid-point edge cases",
+    "trap_explanation": "The student rejected the claim that binary search works on unsorted lists and explained that order is what lets it discard half.",
+    "weakest_key_point": "It is much faster than linear search on large lists, which checks every element.",
     "key_points": [
       {
         "id": "kp1",
-        "statement": "The input array must be sorted for binary search to work correctly.",
+        "statement": "The list must be sorted, because each comparison relies on order to rule out half the list.",
+        "weight": 3,
         "status": "solid",
-        "evidence_quote": "It would not work correctly on an unsorted array — the halving logic assumes order."
+        "comment": "Covered clearly, including why order matters.",
+        "evidence_quote": "Binary search only works on a sorted list, because if it isn't sorted throwing away half could throw away the target."
       },
       {
         "id": "kp2",
-        "statement": "The lo and hi pointers shrink the search window on every iteration.",
+        "statement": "Each step compares the target with the middle element of the current range.",
+        "weight": 3,
         "status": "solid",
-        "evidence_quote": "lo = mid + 1 and hi = mid - 1 move the window closer each time."
+        "comment": "Covered clearly.",
+        "evidence_quote": "It looks at the middle element and compares it with the target."
       },
       {
         "id": "kp3",
-        "statement": "The midpoint value is compared with the target to decide which half to search.",
+        "statement": "The range shrinks by moving the low or high bound past the middle, discarding the half that cannot hold the target.",
+        "weight": 2,
         "status": "partial",
-        "evidence_quote": "I compare arr[mid] to the target, but I wasn't sure about the equal case."
+        "comment": "Partly covered. Describe how the low and high bounds move.",
+        "evidence_quote": "If the target is bigger it throws away the left half, otherwise the right half."
       },
       {
         "id": "kp4",
-        "statement": "The loop continues while lo is less than or equal to hi.",
-        "status": "missing",
-        "evidence_quote": null
+        "statement": "The search stops when the target is found, or when the range is empty (low passes high) and it reports not found.",
+        "weight": 2,
+        "status": "partial",
+        "comment": "Partly covered. Explain both ways the search can end.",
+        "evidence_quote": "It keeps halving until it finds the value or there is nothing left."
       },
       {
         "id": "kp5",
-        "statement": "The function returns -1 when the target is not found.",
+        "statement": "It runs in O(log n) time because the range halves at every step.",
+        "weight": 2,
         "status": "solid",
-        "evidence_quote": "It returns -1 when the loop ends without finding the target."
+        "comment": "Covered clearly.",
+        "evidence_quote": "It keeps halving until it finds the value or there is nothing left, so it takes about log n steps."
       },
       {
         "id": "kp6",
-        "statement": "Binary search runs in O(log n) time.",
-        "status": "partial",
-        "evidence_quote": "I think it's log n because we halve the list each time, but I couldn't prove it."
+        "statement": "It is much faster than linear search on large lists, which checks every element.",
+        "weight": 1,
+        "status": "missing",
+        "comment": "Not covered. Compare it with linear search.",
+        "evidence_quote": null
       }
     ],
     "strengths": [
-      "Correctly implemented the iterative loop with shrinking bounds.",
-      "Identified that an unsorted input breaks the algorithm.",
-      "Caught the integer-overflow trap for fixed-width languages."
+      "Explains that each step compares the target with the middle element.",
+      "Gives the O(log n) cost and links it to halving.",
+      "Explains why the list must be sorted when asked."
     ],
     "gaps": [
-      "Could not articulate the loop-termination condition (lo <= hi) unprompted.",
-      "Incomplete explanation of the midpoint comparison for the equal case.",
-      "Did not state the O(log n) time complexity without prompting."
+      "Does not describe how the low and high bounds move.",
+      "Does not compare binary search with linear search."
     ],
     "review_next": [
-      "Loop invariants and termination conditions in binary search.",
-      "Formal proof of O(log n) complexity.",
-      "Edge cases: empty array, single-element array, duplicate values."
+      "How low and high are updated after each comparison.",
+      "Linear search versus binary search on large lists."
     ],
     "paste_flags": 0
   },
   "errors": [
-    { "status": 404, "meaning": "Unknown session", "body": { "error": "session not found" } },
-    { "status": 409, "meaning": "Viva not finished yet — report not available", "body": { "error": "viva is still in progress" } },
-    { "status": 502, "meaning": "Upstream AI service unavailable", "body": { "error": "The duck is having trouble thinking. Please try again." } }
+    {
+      "status": 404,
+      "meaning": "Unknown session",
+      "body": {
+        "error": "session not found"
+      }
+    },
+    {
+      "status": 409,
+      "meaning": "Follow-up questions not finished yet",
+      "body": {
+        "error": "viva is still in progress"
+      }
+    }
   ]
 }

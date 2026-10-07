@@ -4,6 +4,7 @@ import '../auth/auth_screen.dart';
 import 'api.dart';
 import 'auth.dart';
 import 'duck.dart';
+import 'shell_scope.dart';
 import 'theme.dart';
 
 /// Breakpoints shared across screens.
@@ -47,10 +48,13 @@ class PageBody extends StatelessWidget {
   }
 }
 
+/// The app's surface: a flat panel with a hairline border and a soft shadow.
+/// Tappable cards darken their border and lift slightly on hover.
 class VDCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
   final Color? color;
+  final Color accent;
   final VoidCallback? onTap;
 
   const VDCard({
@@ -58,38 +62,83 @@ class VDCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(20),
     this.color,
+    this.accent = VD.yellow,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final card = AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+    if (onTap == null) {
+      return _CardSurface(
+        padding: padding,
+        color: color,
+        accent: accent,
+        hover: false,
+        child: child,
+      );
+    }
+    return _Hoverable(
+      onTap: onTap!,
+      builder: (hover) => _CardSurface(
+        padding: padding,
+        color: color,
+        accent: accent,
+        hover: hover,
+        child: child,
+      ),
+    );
+  }
+}
+
+class _CardSurface extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final Color? color;
+  final Color accent;
+  final bool hover;
+
+  const _CardSurface({
+    required this.child,
+    required this.padding,
+    required this.color,
+    required this.accent,
+    required this.hover,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = context.isDark;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
       padding: padding,
       decoration: BoxDecoration(
         color: color ?? context.surface,
         borderRadius: BorderRadius.circular(VD.radius),
-        border: Border.all(color: context.line, width: 1.5),
+        border: Border.all(
+          color: hover
+              ? (dark
+                    ? accent.withValues(alpha: 0.55)
+                    : context.inkSoft.withValues(alpha: 0.45))
+              : context.line,
+        ),
         boxShadow: [
-          if (!context.isDark)
-            BoxShadow(
-              color: const Color(0xFFB08A2E).withValues(alpha: 0.07),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-            ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? 0.25 : 0.04),
+            blurRadius: hover ? 18 : 2,
+            offset: Offset(0, hover ? 6 : 1),
+          ),
         ],
       ),
       child: child,
     );
-    if (onTap == null) return card;
-    return _Hoverable(onTap: onTap!, child: card);
   }
 }
 
 class _Hoverable extends StatefulWidget {
-  final Widget child;
+  final Widget Function(bool hover) builder;
   final VoidCallback onTap;
-  const _Hoverable({required this.child, required this.onTap});
+  const _Hoverable({required this.builder, required this.onTap});
 
   @override
   State<_Hoverable> createState() => _HoverableState();
@@ -97,54 +146,20 @@ class _Hoverable extends StatefulWidget {
 
 class _HoverableState extends State<_Hoverable> {
   bool _hover = false;
-  bool _down = false;
-  Offset _tilt = Offset.zero; // -1..1 from the card centre
 
   @override
   Widget build(BuildContext context) {
-    final scale = _down ? 0.98 : (_hover ? 1.02 : 1.0);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() {
-        _hover = false;
-        _tilt = Offset.zero;
-      }),
-      onHover: (e) {
-        final box = context.findRenderObject() as RenderBox?;
-        if (box == null || !box.hasSize) return;
-        final s = box.size;
-        setState(
-          () => _tilt = Offset(
-            (e.localPosition.dx / s.width) * 2 - 1,
-            (e.localPosition.dy / s.height) * 2 - 1,
-          ),
-        );
-      },
+      onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
-        onTapDown: (_) => setState(() => _down = true),
-        onTapUp: (_) => setState(() => _down = false),
-        onTapCancel: () => setState(() => _down = false),
         onTap: widget.onTap,
-        child: TweenAnimationBuilder<Offset>(
-          tween: Tween(end: _tilt),
-          duration: const Duration(milliseconds: 220),
+        child: AnimatedSlide(
+          offset: Offset(0, _hover ? -0.006 : 0),
+          duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          builder: (context, t, child) => Transform(
-            alignment: Alignment.center,
-            // Lean toward the cursor in 3D.
-            transform: Matrix4.identity()
-              ..setEntry(3, 2, 0.0012)
-              ..rotateX(-t.dy * 0.07)
-              ..rotateY(t.dx * 0.07),
-            child: child,
-          ),
-          child: AnimatedScale(
-            scale: scale,
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            child: widget.child,
-          ),
+          child: widget.builder(_hover),
         ),
       ),
     );
@@ -168,12 +183,12 @@ class Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: filled
             ? color
-            : color.withValues(alpha: context.isDark ? 0.22 : 0.13),
-        borderRadius: BorderRadius.circular(99),
+            : color.withValues(alpha: context.isDark ? 0.18 : 0.10),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -182,13 +197,16 @@ class Pill extends StatelessWidget {
             Icon(icon, size: 14, color: filled ? Colors.white : color),
             const SizedBox(width: 5),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.2,
-              color: filled ? Colors.white : color,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: filled ? Colors.white : color,
+              ),
             ),
           ),
         ],
@@ -212,6 +230,30 @@ class VDTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.inShell) {
+      // The sidebar carries the logo, theme and account; keep only the
+      // screen's own actions and a back arrow when there's somewhere to go.
+      final canBack = showBack && Navigator.of(context).canPop();
+      final own = actions.where((a) => a is! ThemeToggle).toList();
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: SizedBox(
+          height: 44,
+          child: Row(
+            children: [
+              if (canBack)
+                IconButton(
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+              const Spacer(),
+              ...own,
+            ],
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: EdgeInsets.symmetric(vertical: context.isPhone ? 10 : 18),
       child: Row(
@@ -235,12 +277,10 @@ class VDTopBar extends StatelessWidget {
               padding: EdgeInsets.only(right: 8),
               child: Tooltip(
                 message:
-                    'Running on bundled sample data. Set API_BASE_URL to use the backend.',
-                child: Pill(
-                  'Demo mode',
-                  color: VD.teal,
-                  icon: Icons.science_outlined,
-                ),
+                    'Demo mode: running on bundled sample data. '
+                    'Set API_BASE_URL to use the backend.',
+                // Icon-only so it informs without competing with the nav.
+                child: Icon(Icons.science_outlined, size: 20, color: VD.teal),
               ),
             ),
           ...actions,
@@ -290,7 +330,7 @@ class AccountButton extends StatelessWidget {
               if (!context.mounted) return;
               Navigator.of(context).popUntil((r) => r.isFirst);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Signed out. See you soon!')),
+                const SnackBar(content: Text('You have been signed out.')),
               );
             }
           },
@@ -303,7 +343,7 @@ class AccountButton extends StatelessWidget {
                   Text(
                     user.name,
                     style: TextStyle(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       color: context.ink,
                     ),
                   ),
@@ -336,7 +376,7 @@ class AccountButton extends StatelessWidget {
               child: Text(
                 initials,
                 style: TextStyle(
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w600,
                   fontSize: 13,
                   color: context.isDark ? Colors.white : VD.ink,
                 ),
@@ -375,7 +415,11 @@ class Logo extends StatelessWidget {
                 ),
               ],
             ),
-            style: context.text.titleLarge?.copyWith(fontSize: size * 0.55),
+            style: context.text.titleLarge?.copyWith(
+              fontSize: size * 0.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
           ),
         ],
       ),
@@ -427,7 +471,7 @@ class FadeSlideIn extends StatefulWidget {
     super.key,
     required this.child,
     this.delay = Duration.zero,
-    this.from = const Offset(0, 0.08),
+    this.from = const Offset(0, 0.03),
   });
 
   @override
@@ -438,7 +482,7 @@ class _FadeSlideInState extends State<FadeSlideIn>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 520),
+    duration: const Duration(milliseconds: 360),
   );
   late final Animation<double> _a = CurvedAnimation(
     parent: _c,
@@ -503,8 +547,8 @@ final themeMode = ValueNotifier(ThemeMode.system);
 
 /// Route with a gentle fade + rise transition.
 Route<T> vdRoute<T>(Widget page) => PageRouteBuilder<T>(
-  transitionDuration: const Duration(milliseconds: 380),
-  reverseTransitionDuration: const Duration(milliseconds: 260),
+  transitionDuration: const Duration(milliseconds: 240),
+  reverseTransitionDuration: const Duration(milliseconds: 180),
   pageBuilder: (_, _, _) => page,
   transitionsBuilder: (_, a, _, child) {
     final c = CurvedAnimation(parent: a, curve: Curves.easeOutCubic);
@@ -512,7 +556,7 @@ Route<T> vdRoute<T>(Widget page) => PageRouteBuilder<T>(
       opacity: c,
       child: SlideTransition(
         position: Tween(
-          begin: const Offset(0, 0.03),
+          begin: const Offset(0, 0.012),
           end: Offset.zero,
         ).animate(c),
         child: child,

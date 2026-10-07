@@ -1,0 +1,98 @@
+{
+  "id": "factorial_recursive",
+  "title": "Recursion",
+  "subject": "Programming",
+  "prompt": "Explain recursion using the factorial function as an example. Describe the base case, the recursive case, how the calls build up and unwind, and what happens without a base case.",
+  "marks": 10,
+  "points": [
+    {
+      "id": "kp1",
+      "statement": "A recursive function solves a problem by calling itself on a smaller version of the same problem.",
+      "weight": 3,
+      "hint": "Say that the function calls itself on a smaller input.",
+      "mock_keywords": [
+        "calls itself",
+        "itself",
+        "smaller"
+      ]
+    },
+    {
+      "id": "kp2",
+      "statement": "The base case stops the recursion: factorial(0) or factorial(1) returns 1 without another call.",
+      "weight": 3,
+      "hint": "Name the base case and what it returns.",
+      "mock_keywords": [
+        "base case",
+        "n == 0",
+        "n == 1",
+        "0! ",
+        "returns 1",
+        "stop"
+      ]
+    },
+    {
+      "id": "kp3",
+      "statement": "The recursive case computes n! as n multiplied by (n - 1)!.",
+      "weight": 2,
+      "hint": "Write out the recursive step.",
+      "mock_keywords": [
+        "n - 1",
+        "n-1",
+        "n \u2212 1",
+        "multipl",
+        "times"
+      ]
+    },
+    {
+      "id": "kp4",
+      "statement": "Each call waits on the call stack; when the base case returns, the calls unwind and multiply the results back up.",
+      "weight": 2,
+      "hint": "Describe the call stack and the unwinding.",
+      "mock_keywords": [
+        "stack",
+        "unwind",
+        "return back",
+        "waits"
+      ]
+    },
+    {
+      "id": "kp5",
+      "statement": "Without a base case the calls never stop, causing infinite recursion and a stack overflow.",
+      "weight": 2,
+      "hint": "Explain what happens with no base case.",
+      "mock_keywords": [
+        "infinite",
+        "overflow",
+        "never stop",
+        "forever"
+      ]
+    },
+    {
+      "id": "kp6",
+      "statement": "Recursion uses extra memory for each call compared with a loop.",
+      "weight": 1,
+      "hint": "Compare recursion with iteration.",
+      "mock_keywords": [
+        "loop",
+        "iterative",
+        "iteration",
+        "memory"
+      ]
+    }
+  ],
+  "trap": {
+    "false_claim": "Recursion uses no more memory than a loop, because the computer reuses the same variables.",
+    "truth": "Every recursive call adds a frame to the call stack, so memory grows with the depth of the recursion."
+  },
+  "follow_ups": {
+    "probe": {
+      "kp1": "In your own words, what makes a function recursive?",
+      "kp2": "What is the base case for factorial, and why does it matter?",
+      "kp3": "How would you write factorial(n) in terms of a smaller factorial?",
+      "kp4": "Walk me through what happens on the call stack for factorial(3).",
+      "kp5": "What would happen if factorial had no base case?",
+      "kp6": "How is the recursive factorial different from one written with a loop?"
+    },
+    "what_if": "What happens if someone calls your factorial with a negative number?"
+  }
+}

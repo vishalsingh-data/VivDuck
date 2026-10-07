@@ -2,83 +2,300 @@
   "title": "Teacher Summary",
   "method": "GET",
   "path": "/teacher/summary",
+  "notes": "Every finished session, newest first. The review queue is the sessions where needs_review is true and teacher_score is null. agreement compares teacher_score with score_before over the sessions a teacher has scored; within_10_pct is the share that differ by 10 points or less. weak_concepts counts the rubric points marked partial or missing, across all questions.",
   "response": {
-    "assignment": "Binary search",
+    "assignment": "All questions",
     "sessions": [
       {
-        "session_id": "s_a1b2",
-        "student": "Jordan Lee",
-        "score_before": 61,
-        "score_after": 75,
-        "bloom_reached": "Apply",
-        "trap_caught": false,
-        "weakest_key_point": "O(log n) time complexity",
-        "sample": true,
-        "finished_at": "2026-10-01T09:14:00Z"
-      },
-      {
-        "session_id": "s_c3d4",
-        "student": "Priya Sharma",
-        "score_before": 45,
-        "score_after": 68,
-        "bloom_reached": "Understand",
-        "trap_caught": false,
-        "weakest_key_point": "Loop termination condition",
-        "sample": true,
-        "finished_at": "2026-10-01T10:02:00Z"
-      },
-      {
-        "session_id": "s_e5f6",
-        "student": "Marcus Webb",
-        "score_before": 70,
-        "score_after": 88,
+        "session_id": "s_a1dd",
+        "student": "Grace Kim",
+        "question_id": "binary_search",
+        "question_title": "Binary search",
+        "score_before": 90,
+        "score_after": 94,
         "bloom_reached": "Analyse",
         "trap_caught": true,
-        "weakest_key_point": "Midpoint comparison for the equal case",
+        "weakest_key_point": "It is much faster than linear search on large lists, which checks every element.",
+        "source": "typed",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 92,
         "sample": true,
-        "finished_at": "2026-10-02T08:45:00Z"
+        "finished_at": "2026-10-03T12:49:00Z"
       },
       {
-        "session_id": "s_g7h8",
+        "session_id": "s_a1cc",
+        "student": "Omar Haddad",
+        "question_id": "normalisation",
+        "question_title": "Database normalisation",
+        "score_before": 47,
+        "score_after": 61,
+        "bloom_reached": "Understand",
+        "trap_caught": false,
+        "weakest_key_point": "2NF requires 1NF and no partial dependency: every non-key column depends on the whole primary key.",
+        "source": "typed",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 52,
+        "sample": true,
+        "finished_at": "2026-10-03T11:36:00Z"
+      },
+      {
+        "session_id": "s_a1bb",
+        "student": "Divya Menon",
+        "question_id": "normalisation",
+        "question_title": "Database normalisation",
+        "score_before": 79,
+        "score_after": 86,
+        "bloom_reached": "Analyse",
+        "trap_caught": true,
+        "weakest_key_point": "Normalising adds joins, which can slow some queries.",
+        "source": "typed",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 81,
+        "sample": true,
+        "finished_at": "2026-10-03T10:23:00Z"
+      },
+      {
+        "session_id": "s_a1aa",
+        "student": "Rahul Verma",
+        "question_id": "normalisation",
+        "question_title": "Database normalisation",
+        "score_before": 66,
+        "score_after": 74,
+        "bloom_reached": "Apply",
+        "trap_caught": false,
+        "weakest_key_point": "2NF requires 1NF and no partial dependency: every non-key column depends on the whole primary key.",
+        "source": "photo",
+        "needs_review": true,
+        "review_reasons": [
+          {
+            "code": "handwriting",
+            "message": "The handwriting was hard to read."
+          }
+        ],
+        "teacher_score": 60,
+        "sample": true,
+        "finished_at": "2026-10-03T09:10:00Z"
+      },
+      {
+        "session_id": "s_a199",
+        "student": "Mei Chen",
+        "question_id": "normalisation",
+        "question_title": "Database normalisation",
+        "score_before": 58,
+        "score_after": 72,
+        "bloom_reached": "Apply",
+        "trap_caught": true,
+        "weakest_key_point": "3NF requires 2NF and no transitive dependency: non-key columns depend only on the key.",
+        "source": "typed",
+        "needs_review": true,
+        "review_reasons": [
+          {
+            "code": "pasted",
+            "message": "The answer was pasted."
+          }
+        ],
+        "teacher_score": null,
+        "sample": true,
+        "finished_at": "2026-10-02T13:57:00Z"
+      },
+      {
+        "session_id": "s_a188",
+        "student": "Lena Fischer",
+        "question_id": "factorial_recursive",
+        "question_title": "Recursion",
+        "score_before": 56,
+        "score_after": 66,
+        "bloom_reached": "Apply",
+        "trap_caught": false,
+        "weakest_key_point": "Without a base case the calls never stop, causing infinite recursion and a stack overflow.",
+        "source": "typed",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 50,
+        "sample": true,
+        "finished_at": "2026-10-02T12:44:00Z"
+      },
+      {
+        "session_id": "s_a177",
+        "student": "Arjun Nair",
+        "question_id": "factorial_recursive",
+        "question_title": "Recursion",
+        "score_before": 84,
+        "score_after": 92,
+        "bloom_reached": "Analyse",
+        "trap_caught": true,
+        "weakest_key_point": "Recursion uses extra memory for each call compared with a loop.",
+        "source": "photo",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 88,
+        "sample": true,
+        "finished_at": "2026-10-02T11:31:00Z"
+      },
+      {
+        "session_id": "s_a166",
+        "student": "Tariq Osei",
+        "question_id": "factorial_recursive",
+        "question_title": "Recursion",
+        "score_before": 71,
+        "score_after": 80,
+        "bloom_reached": "Apply",
+        "trap_caught": true,
+        "weakest_key_point": "Recursion uses extra memory for each call compared with a loop.",
+        "source": "typed",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 75,
+        "sample": true,
+        "finished_at": "2026-10-02T10:18:00Z"
+      },
+      {
+        "session_id": "s_a155",
         "student": "Sofia Reyes",
+        "question_id": "factorial_recursive",
+        "question_title": "Recursion",
         "score_before": 50,
         "score_after": 63,
         "bloom_reached": "Understand",
         "trap_caught": false,
-        "weakest_key_point": "Loop termination condition",
+        "weakest_key_point": "Each call waits on the call stack; when the base case returns, the calls unwind and multiply the results back up.",
+        "source": "typed",
+        "needs_review": true,
+        "review_reasons": [
+          {
+            "code": "runs_differ",
+            "message": "The two grading runs differ by more than 10 points."
+          }
+        ],
+        "teacher_score": 62,
         "sample": true,
-        "finished_at": "2026-10-02T14:30:00Z"
+        "finished_at": "2026-10-02T09:05:00Z"
       },
       {
-        "session_id": "s_i9j0",
-        "student": "Tariq Osei",
-        "score_before": 66,
-        "score_after": 80,
+        "session_id": "s_a144",
+        "student": "Kiran Patel",
+        "question_id": "binary_search",
+        "question_title": "Binary search",
+        "score_before": 38,
+        "score_after": 52,
+        "bloom_reached": "Understand",
+        "trap_caught": false,
+        "weakest_key_point": "The list must be sorted, because each comparison relies on order to rule out half the list.",
+        "source": "typed",
+        "needs_review": true,
+        "review_reasons": [
+          {
+            "code": "runs_differ",
+            "message": "The two grading runs differ by more than 10 points."
+          }
+        ],
+        "teacher_score": null,
+        "sample": true,
+        "finished_at": "2026-10-01T13:52:00Z"
+      },
+      {
+        "session_id": "s_a133",
+        "student": "Ananya Rao",
+        "question_id": "binary_search",
+        "question_title": "Binary search",
+        "score_before": 70,
+        "score_after": 79,
         "bloom_reached": "Apply",
         "trap_caught": true,
-        "weakest_key_point": "O(log n) time complexity",
+        "weakest_key_point": "The range shrinks by moving the low or high bound past the middle, discarding the half that cannot hold the target.",
+        "source": "photo",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 74,
         "sample": true,
-        "finished_at": "2026-10-03T11:20:00Z"
+        "finished_at": "2026-10-01T12:39:00Z"
       },
       {
-        "session_id": "s_k3f9",
-        "student": "Alice Nguyen",
-        "score_before": 54,
-        "score_after": 79,
+        "session_id": "s_a122",
+        "student": "Marcus Webb",
+        "question_id": "binary_search",
+        "question_title": "Binary search",
+        "score_before": 82,
+        "score_after": 90,
         "bloom_reached": "Analyse",
         "trap_caught": true,
-        "weakest_key_point": "Off-by-one and mid-point edge cases",
-        "sample": false,
-        "finished_at": "2026-10-04T17:55:00Z"
+        "weakest_key_point": "It is much faster than linear search on large lists, which checks every element.",
+        "source": "typed",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 78,
+        "sample": true,
+        "finished_at": "2026-10-01T11:26:00Z"
+      },
+      {
+        "session_id": "s_a111",
+        "student": "Priya Sharma",
+        "question_id": "binary_search",
+        "question_title": "Binary search",
+        "score_before": 45,
+        "score_after": 68,
+        "bloom_reached": "Understand",
+        "trap_caught": false,
+        "weakest_key_point": "The search stops when the target is found, or when the range is empty (low passes high) and it reports not found.",
+        "source": "photo",
+        "needs_review": true,
+        "review_reasons": [
+          {
+            "code": "handwriting",
+            "message": "The handwriting was hard to read."
+          }
+        ],
+        "teacher_score": null,
+        "sample": true,
+        "finished_at": "2026-10-01T10:13:00Z"
+      },
+      {
+        "session_id": "s_a100",
+        "student": "Jordan Lee",
+        "question_id": "binary_search",
+        "question_title": "Binary search",
+        "score_before": 61,
+        "score_after": 75,
+        "bloom_reached": "Apply",
+        "trap_caught": false,
+        "weakest_key_point": "It runs in O(log n) time because the range halves at every step.",
+        "source": "typed",
+        "needs_review": false,
+        "review_reasons": [],
+        "teacher_score": 64,
+        "sample": true,
+        "finished_at": "2026-10-01T09:00:00Z"
       }
     ],
+    "agreement": {
+      "sample_size": 11,
+      "mean_abs_diff": 4.7,
+      "within_10_pct": 91
+    },
     "weak_concepts": [
-      { "concept": "Loop termination condition", "count": 2, "total": 6 },
-      { "concept": "O(log n) time complexity", "count": 2, "total": 6 },
-      { "concept": "Midpoint comparison for the equal case", "count": 1, "total": 6 }
+      {
+        "concept": "It is much faster than linear search on large lists, which checks every element.",
+        "count": 2,
+        "total": 14
+      },
+      {
+        "concept": "2NF requires 1NF and no partial dependency: every non-key column depends on the whole primary key.",
+        "count": 2,
+        "total": 14
+      },
+      {
+        "concept": "Recursion uses extra memory for each call compared with a loop.",
+        "count": 2,
+        "total": 14
+      },
+      {
+        "concept": "Normalising adds joins, which can slow some queries.",
+        "count": 1,
+        "total": 14
+      }
     ]
-  },
-  "errors": [
-    { "status": 502, "meaning": "Upstream AI service unavailable", "body": { "error": "The duck is having trouble thinking. Please try again." } }
-  ]
+  }
 }

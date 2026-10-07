@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "vivduck",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["backend/server/server.js"],
+      "port": 8000
+    },
+    {
       "name": "vivduck-web",
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8090", "--directory", "app/build/web"],

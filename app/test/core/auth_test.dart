@@ -75,20 +75,23 @@ void main() {
     });
   });
 
-  test('Auth persists and restores the session, and logout clears it', () async {
-    final demo = await Auth.instance.demoAccounts();
-    final student = demo.firstWhere((d) => d.role == UserRole.student);
-    await Auth.instance.login(student.email.toUpperCase(), student.password);
-    expect(Auth.instance.signedIn, isTrue);
+  test(
+    'Auth persists and restores the session, and logout clears it',
+    () async {
+      final demo = await Auth.instance.demoAccounts();
+      final student = demo.firstWhere((d) => d.role == UserRole.student);
+      await Auth.instance.login(student.email.toUpperCase(), student.password);
+      expect(Auth.instance.signedIn, isTrue);
 
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('vd.token'), Auth.instance.token);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('vd.token'), Auth.instance.token);
 
-    await Auth.instance.logout();
-    expect(Auth.instance.user, isNull);
-    expect(prefs.getString('vd.token'), isNull);
+      await Auth.instance.logout();
+      expect(Auth.instance.user, isNull);
+      expect(prefs.getString('vd.token'), isNull);
 
-    await Auth.instance.restore();
-    expect(Auth.instance.user, isNull);
-  });
+      await Auth.instance.restore();
+      expect(Auth.instance.user, isNull);
+    },
+  );
 }

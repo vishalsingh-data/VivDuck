@@ -11,6 +11,8 @@ import '../core/effects.dart';
 import '../core/pond.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import '../shell/app_shell.dart' show shellMinWidth;
+import '../viva/submit_screen.dart';
 
 enum AuthMode { login, register }
 
@@ -69,6 +71,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _invite = TextEditingController();
+  final _inviteFocus = FocusNode();
   final _nameFocus = FocusNode();
   final _emailFocus = FocusNode();
   final _passwordFocus = FocusNode();
@@ -100,9 +104,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _email, _password]) {
+    for (final c in [_name, _email, _password, _invite]) {
       c.dispose();
     }
+    _inviteFocus.dispose();
     for (final f in [_nameFocus, _emailFocus, _passwordFocus]) {
       f.dispose();
     }
@@ -141,7 +146,7 @@ class _AuthScreenState extends State<AuthScreen> {
     if (_focused == _Field.password) {
       return _obscure ? DuckMood.shy : DuckMood.curious;
     }
-    if (_error != null) return DuckMood.sly;
+    if (_error != null) return DuckMood.curious;
     return DuckMood.idle;
   }
 
@@ -160,7 +165,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   String get _line {
-    if (_success) return "You're in! Quack quack!";
+    if (_success) return "You're signed in.";
     if (_busy) return 'Checking the pond…';
     if (_error != null) return 'Hmm, that didn\'t work. Try again?';
     switch (_focused) {
@@ -168,19 +173,15 @@ class _AuthScreenState extends State<AuthScreen> {
         final first = _name.text.trim().split(' ').first;
         return first.isEmpty
             ? 'What should I call you?'
-            : 'Nice to meet you, $first!';
+            : 'Nice to meet you, $first.';
       case _Field.email:
         return _email.text.contains('@')
             ? 'Looking good…'
             : "What's your email?";
       case _Field.password:
-        return _obscure
-            ? "I'm not peeking, promise!"
-            : 'Ooh, now I can see it…';
+        return _obscure ? "I'm not looking." : 'Ooh, now I can see it…';
       case _Field.none:
-        return _register
-            ? 'A new friend! Let\'s set you up.'
-            : 'Hey, welcome back!';
+        return _register ? 'Let\'s set up your account.' : 'Welcome back.';
     }
   }
 
@@ -213,6 +214,7 @@ class _AuthScreenState extends State<AuthScreen> {
               email: _email.text,
               password: _password.text,
               role: _role,
+              inviteCode: _role == UserRole.teacher ? _invite.text : null,
             )
           : await Auth.instance.login(_email.text, _password.text);
       TextInput.finishAutofillContext();
@@ -259,6 +261,12 @@ class _AuthScreenState extends State<AuthScreen> {
       );
       return;
     }
+    // On big screens the home becomes the workspace once signed in, and its
+    // composer replaces the separate submit page.
+    if (next is SubmitScreen && context.width >= shellMinWidth) {
+      nav.popUntil((r) => r.isFirst);
+      return;
+    }
     nav.pushReplacement(vdRoute(next));
   }
 
@@ -287,6 +295,8 @@ class _AuthScreenState extends State<AuthScreen> {
           name: _name,
           email: _email,
           password: _password,
+          invite: _invite,
+          inviteFocus: _inviteFocus,
           nameFocus: _nameFocus,
           emailFocus: _emailFocus,
           passwordFocus: _passwordFocus,
@@ -347,6 +357,13 @@ class _WideLayout extends StatelessWidget {
     required this.card,
   });
 
+  // Top-bar geometry. The headline copy starts where the logo starts, so the
+  // back button gets a fixed size instead of the platform's density default.
+  static const _gutter = 32.0;
+  static const _backSize = 48.0;
+  static const _backGap = 4.0;
+  static const _copyInset = _gutter + _backSize + _backGap;
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -356,16 +373,21 @@ class _WideLayout extends StatelessWidget {
         return Stack(
           children: [
             Positioned(
-              left: 32,
+              left: _gutter,
               top: 12,
               child: Row(
                 children: [
                   IconButton(
                     tooltip: 'Back',
+                    visualDensity: VisualDensity.standard,
+                    constraints: const BoxConstraints.tightFor(
+                      width: _backSize,
+                      height: _backSize,
+                    ),
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.arrow_back_rounded),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: _backGap),
                   const Logo(size: 44),
                 ],
               ),
@@ -380,13 +402,18 @@ class _WideLayout extends StatelessWidget {
               child: Column(
                 children: [
                   SizedBox(height: box.maxHeight * 0.13),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 56),
+                  // Pin the copy to the logo's left edge so swapping headlines
+                  // never shifts it sideways.
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.only(left: _copyInset, right: 48),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         WaveText(
-                          register ? 'Join the pond.' : 'Welcome back!',
+                          register
+                              ? 'Create your account'
+                              : 'Sign in to VivDuck',
                           style: context.text.displayMedium?.copyWith(
                             height: 1.05,
                           ),
@@ -394,9 +421,13 @@ class _WideLayout extends StatelessWidget {
                         const SizedBox(height: 12),
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),
+                          layoutBuilder: (current, previous) => Stack(
+                            alignment: Alignment.topLeft,
+                            children: [...previous, ?current],
+                          ),
                           child: Text(
                             register
-                                ? 'Practise vivas, keep every report and see exactly what to review next.'
+                                ? 'Answer questions, keep every graded report and see exactly what to review next.'
                                 : 'Pick up where you left off. The duck has questions.',
                             key: ValueKey(register),
                             style: context.text.titleMedium?.copyWith(
@@ -485,7 +516,7 @@ class _GlassCard extends StatelessWidget {
     final dark = context.isDark;
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: (dark ? Colors.black : const Color(0xFF2A7F7A)).withValues(
@@ -497,7 +528,7 @@ class _GlassCard extends StatelessWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
@@ -569,7 +600,7 @@ class SpeechBubble extends StatelessWidget {
           child: Text(
             text,
             style: context.text.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -613,32 +644,43 @@ class _WaveTextState extends State<WaveText>
   @override
   Widget build(BuildContext context) {
     final chars = widget.text.characters.toList();
+    // Group letters into words (each space stays on its own) so lines only
+    // break between words, never inside one.
+    final words = <List<int>>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (chars[i] == ' ' || words.isEmpty || chars[words.last.last] == ' ') {
+        words.add([i]);
+      } else {
+        words.last.add(i);
+      }
+    }
+    Widget letter(int i) {
+      final start = i / chars.length * 0.5;
+      final v = widget.progress ?? _c.value;
+      final p = ((v - start) / 0.5).clamp(0.0, 1.0);
+      final e = Curves.elasticOut.transform(p);
+      return Opacity(
+        opacity: p.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, (1 - e) * -28),
+          child: Text(
+            chars[i],
+            style: widget.style?.copyWith(
+              color: chars[i] == '.' || chars[i] == '!' ? VD.orange : null,
+            ),
+          ),
+        ),
+      );
+    }
+
     return AnimatedBuilder(
       animation: _c,
       builder: (context, _) => Wrap(
         children: [
-          for (var i = 0; i < chars.length; i++)
-            Builder(
-              builder: (context) {
-                final start = i / chars.length * 0.5;
-                final v = widget.progress ?? _c.value;
-                final p = ((v - start) / 0.5).clamp(0.0, 1.0);
-                final e = Curves.elasticOut.transform(p);
-                return Opacity(
-                  opacity: p.clamp(0.0, 1.0),
-                  child: Transform.translate(
-                    offset: Offset(0, (1 - e) * -28),
-                    child: Text(
-                      chars[i],
-                      style: widget.style?.copyWith(
-                        color: chars[i] == '.' || chars[i] == '!'
-                            ? VD.orange
-                            : null,
-                      ),
-                    ),
-                  ),
-                );
-              },
+          for (final w in words)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [for (final i in w) letter(i)],
             ),
         ],
       ),
@@ -653,8 +695,8 @@ class _FormBody extends StatelessWidget {
   final int modeHop;
   final UserRole role;
   final UserRole? lockedRole;
-  final TextEditingController name, email, password;
-  final FocusNode nameFocus, emailFocus, passwordFocus;
+  final TextEditingController name, email, password, invite;
+  final FocusNode nameFocus, emailFocus, passwordFocus, inviteFocus;
   final bool obscure, busy, success;
   final String? error;
   final ValueChanged<AuthMode> onMode;
@@ -672,6 +714,8 @@ class _FormBody extends StatelessWidget {
     required this.name,
     required this.email,
     required this.password,
+    required this.invite,
+    required this.inviteFocus,
     required this.nameFocus,
     required this.emailFocus,
     required this.passwordFocus,
@@ -722,6 +766,25 @@ class _FormBody extends StatelessWidget {
                             locked: lockedRole,
                             onChanged: busy ? null : onRole,
                           ),
+                          if (role == UserRole.teacher) ...[
+                            const SizedBox(height: 16),
+                            const _Label('Teacher invite code'),
+                            const SizedBox(height: 8),
+                            _GlowField(
+                              focus: inviteFocus,
+                              icon: Icons.key_rounded,
+                              child: TextFormField(
+                                controller: invite,
+                                focusNode: inviteFocus,
+                                enabled: !busy,
+                                textInputAction: TextInputAction.next,
+                                autocorrect: false,
+                                decoration: const InputDecoration(
+                                  hintText: 'From your school admin',
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 16),
                           const _Label('Full name'),
                           const SizedBox(height: 8),
@@ -920,15 +983,14 @@ class _DuckTabs extends StatelessWidget {
                       height: 44,
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFFD95C), VD.yellow],
-                          ),
-                          borderRadius: BorderRadius.circular(14),
+                          color: context.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: context.line),
                           boxShadow: [
                             BoxShadow(
-                              color: VD.orange.withValues(alpha: 0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 3,
+                              offset: const Offset(0, 1),
                             ),
                           ],
                         ),
@@ -977,9 +1039,9 @@ class _DuckTabs extends StatelessWidget {
                           child: AnimatedDefaultTextStyle(
                             duration: const Duration(milliseconds: 250),
                             style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: mode == m ? 16 : 15,
-                              color: mode == m ? VD.ink : context.inkSoft,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14.5,
+                              color: mode == m ? context.ink : context.inkSoft,
                             ),
                             child: Text(label),
                           ),
@@ -1012,17 +1074,7 @@ class _GlowField extends StatelessWidget {
     final on = focus.hasFocus;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          if (on)
-            BoxShadow(
-              color: VD.orange.withValues(alpha: 0.25),
-              blurRadius: 18,
-              spreadRadius: 1,
-            ),
-        ],
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14)),
       child: Stack(
         children: [
           _PrefixPad(child: child),
@@ -1031,13 +1083,12 @@ class _GlowField extends StatelessWidget {
             top: 17,
             child: IgnorePointer(
               child: AnimatedScale(
-                scale: on ? 1.2 : 1,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.elasticOut,
+                scale: 1,
+                duration: const Duration(milliseconds: 150),
                 child: Icon(
                   icon,
-                  size: 22,
-                  color: on ? VD.orange : context.inkSoft,
+                  size: 20,
+                  color: on ? context.ink : context.inkSoft,
                 ),
               ),
             ),
@@ -1081,17 +1132,15 @@ class _SubmitButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final button = AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      height: 56,
+      height: 48,
       child: FilledButton(
         onPressed: busy || success ? null : onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: VD.orange,
-          foregroundColor: Colors.white,
           disabledBackgroundColor: success
               ? VD.solid
-              : VD.orange.withValues(alpha: 0.6),
+              : Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
           disabledForegroundColor: Colors.white,
-          textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
         ),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
@@ -1106,7 +1155,7 @@ class _SubmitButton extends StatelessWidget {
                   children: [
                     Icon(Icons.check_circle_rounded),
                     SizedBox(width: 8),
-                    Text("You're in!"),
+                    Text("Signed in"),
                   ],
                 )
               : busy
@@ -1145,7 +1194,7 @@ class _Label extends StatelessWidget {
     style: TextStyle(
       fontSize: 12,
       letterSpacing: 0.8,
-      fontWeight: FontWeight.w800,
+      fontWeight: FontWeight.w600,
       color: context.inkSoft,
     ),
   );
@@ -1214,7 +1263,7 @@ class _RolePicker extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       title,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -1236,7 +1285,7 @@ class _RolePicker extends StatelessWidget {
           UserRole.student,
           Icons.school_rounded,
           'Student',
-          'Practise vivas',
+          'Graded answers',
           VD.orange,
         ),
         const SizedBox(width: 10),
@@ -1302,7 +1351,7 @@ class _StrengthMeter extends StatelessWidget {
                 textAlign: TextAlign.right,
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   color: color,
                 ),
               ),

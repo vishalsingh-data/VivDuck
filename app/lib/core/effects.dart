@@ -207,75 +207,22 @@ class CountUp extends StatelessWidget {
 
 // ── Shine sweep ──────────────────────────────────────────────────────────────
 
-/// Sweeps a soft highlight across [child] every few seconds. Wrap primary buttons.
-class Shine extends StatefulWidget {
+/// Marks a primary button. It used to sweep a highlight across the button;
+/// that read as decoration rather than function, so it now renders [child]
+/// as is. Kept so call sites stay unchanged.
+class Shine extends StatelessWidget {
   final Widget child;
   final BorderRadius borderRadius;
   final Duration every;
   const Shine({
     super.key,
     required this.child,
-    this.borderRadius = const BorderRadius.all(Radius.circular(16)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(10)),
     this.every = const Duration(milliseconds: 3200),
   });
 
   @override
-  State<Shine> createState() => _ShineState();
-}
-
-class _ShineState extends State<Shine> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: widget.every,
-  )..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.child,
-        Positioned.fill(
-          child: IgnorePointer(
-            child: ClipRRect(
-              borderRadius: widget.borderRadius,
-              child: AnimatedBuilder(
-                animation: _c,
-                builder: (_, _) {
-                  // Sweep during the first 30% of each cycle, rest otherwise.
-                  final p = (_c.value / 0.3).clamp(0.0, 1.0);
-                  if (p >= 1) return const SizedBox.shrink();
-                  return FractionalTranslation(
-                    translation: Offset(-1.2 + p * 2.4, 0),
-                    child: Transform.rotate(
-                      angle: 0.35,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.white.withValues(alpha: 0),
-                              Colors.white.withValues(alpha: 0.45),
-                              Colors.white.withValues(alpha: 0),
-                            ],
-                            stops: const [0.35, 0.5, 0.65],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => child;
 }
 
 // ── Shake ────────────────────────────────────────────────────────────────────

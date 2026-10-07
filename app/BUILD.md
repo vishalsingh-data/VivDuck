@@ -6,8 +6,9 @@ One Flutter codebase for web, Android and iOS. Layouts adapt at 720px (tablet) a
 
 | Mode | How | What it does |
 |------|-----|--------------|
-| Demo (default) | no flags | Uses `assets/fixtures/` and mimics the `backend/ai` stub (probe → what-if → trap → done). No server needed. Shows a "Demo mode" pill. |
-| Live | `--dart-define=API_BASE_URL=http://localhost:8000` | Calls the backend routes in `shared/contracts/`. |
+| Live (default) | no flags | Debug: the local server at `http://localhost:8000` (`10.0.2.2` on the Android emulator). Web release: the server that served the page. |
+| Live, other server | `--dart-define=API_BASE_URL=https://your-server` | Calls that server. Use this for Android/iOS release builds. |
+| Mock | `--dart-define=API_BASE_URL=mock` | Bundled fixtures, no network. Used by `flutter test`. Shows a "Demo mode" pill. |
 
 On the Android emulator, the host machine is `http://10.0.2.2:8000`.
 
@@ -16,12 +17,12 @@ On the Android emulator, the host machine is `http://10.0.2.2:8000`.
 ```bash
 cd app
 flutter pub get
-flutter run -d chrome                                   # web, demo mode
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000
+flutter run -d chrome                                   # web, against the local server
+flutter run -d chrome --dart-define=API_BASE_URL=mock    # web, no server
 flutter run -d <android-or-ios-device-id>
 flutter build web                                       # output: build/web
-flutter build apk
-flutter test
+flutter build apk --dart-define=API_BASE_URL=https://your-server
+flutter test --dart-define=API_BASE_URL=mock
 ```
 
 ## Layout
@@ -47,4 +48,4 @@ lib/
 - **Endpoints:** `POST /auth/register` and `POST /auth/login` (see `shared/contracts/05_register.json` and `06_login.json`). Both return `{ token, user }`.
 - **Token:** the app saves it on the device and sends `Authorization: Bearer <token>` on every viva and teacher request.
 - **Sign-in gates:** students and teachers can both start a viva. Only teacher accounts can open the class dashboard. The landing page is public.
-- **Demo mode:** you can log in with the seeded accounts in `assets/fixtures/demo_accounts.json`, or tap "Demo student" / "Demo teacher" on the login screen. Accounts you register in demo mode are kept in memory only, so they're gone after a reload, but the signed-in session stays.
+- **Mock mode:** you can log in with the seeded accounts in `assets/fixtures/demo_accounts.json`, or tap "Demo student" / "Demo teacher" on the login screen. Accounts you register in demo mode are kept in memory only, so they're gone after a reload, but the signed-in session stays.

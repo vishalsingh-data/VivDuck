@@ -1,15 +1,16 @@
 {
-  "title": "Submit Turn",
+  "title": "Answer a Follow-up Question",
   "method": "POST",
   "path": "/sessions/{session_id}/turn",
+  "notes": "Three follow-ups in a fixed order: probe (the weakest rubric point), what_if, trap. round counts follow-up answers received. The third answer returns done true and question null; the report is then ready.",
   "request": {
-    "text": "It returns -1 when the loop ends without finding the target.",
+    "text": "If it isn't sorted, throwing away half the list could throw away the target.",
     "pasted": false
   },
   "response": {
-    "question": "What would happen to your algorithm if the input array were not sorted?",
+    "question": "What happens if the value you are looking for appears several times in the list?",
     "question_type": "what_if",
-    "round": 2,
+    "round": 1,
     "done": false
   },
   "errors": [

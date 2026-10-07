@@ -1,0 +1,94 @@
+{
+  "id": "normalisation",
+  "title": "Database normalisation",
+  "subject": "Databases",
+  "prompt": "Explain database normalisation up to third normal form. Describe the purpose of normalising, and what 1NF, 2NF and 3NF each require.",
+  "marks": 10,
+  "points": [
+    {
+      "id": "kp1",
+      "statement": "Normalisation reduces redundant data and prevents insert, update and delete anomalies.",
+      "weight": 3,
+      "hint": "Explain why we normalise at all.",
+      "mock_keywords": [
+        "redundan",
+        "anomal",
+        "duplicat",
+        "repeated data"
+      ]
+    },
+    {
+      "id": "kp2",
+      "statement": "1NF requires atomic values in every column and no repeating groups.",
+      "weight": 2,
+      "hint": "State what 1NF requires.",
+      "mock_keywords": [
+        "atomic",
+        "repeating group",
+        "single value",
+        "one value"
+      ]
+    },
+    {
+      "id": "kp3",
+      "statement": "2NF requires 1NF and no partial dependency: every non-key column depends on the whole primary key.",
+      "weight": 3,
+      "hint": "Explain partial dependency on a composite key.",
+      "mock_keywords": [
+        "partial",
+        "composite",
+        "whole key",
+        "entire key"
+      ]
+    },
+    {
+      "id": "kp4",
+      "statement": "3NF requires 2NF and no transitive dependency: non-key columns depend only on the key.",
+      "weight": 3,
+      "hint": "Explain transitive dependency.",
+      "mock_keywords": [
+        "transitive",
+        "non-key",
+        "depends on another"
+      ]
+    },
+    {
+      "id": "kp5",
+      "statement": "A worked example of a table being split.",
+      "weight": 1,
+      "hint": "Add a short example.",
+      "mock_keywords": [
+        "example",
+        "for instance",
+        "e.g.",
+        "such as"
+      ]
+    },
+    {
+      "id": "kp6",
+      "statement": "Normalising adds joins, which can slow some queries.",
+      "weight": 1,
+      "hint": "Mention the trade-off.",
+      "mock_keywords": [
+        "join",
+        "performance",
+        "slower"
+      ]
+    }
+  ],
+  "trap": {
+    "false_claim": "A table can be in 3NF while still having partial dependencies, as long as it has no transitive ones.",
+    "truth": "3NF includes 2NF, so a table in 3NF can have no partial dependencies."
+  },
+  "follow_ups": {
+    "probe": {
+      "kp1": "What problem does normalisation actually solve? Give one anomaly.",
+      "kp2": "What does it mean for a value to be atomic?",
+      "kp3": "What is a partial dependency? When can it happen?",
+      "kp4": "What is a transitive dependency? Give a small example.",
+      "kp5": "Can you give an example of a table that breaks 2NF?",
+      "kp6": "Is there any downside to normalising a database fully?"
+    },
+    "what_if": "What would change if the table's primary key were a single column instead of a composite key?"
+  }
+}

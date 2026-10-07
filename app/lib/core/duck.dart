@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'theme.dart';
 
 /// [shy] covers its eyes with a wing — used while a password is being typed.
-enum DuckMood { idle, thinking, curious, sly, happy, shy }
+/// [playful] is for trickier questions: bright eyes, a raised brow and a
+/// twinkle, so a hard question feels like a game rather than a threat.
+enum DuckMood { idle, thinking, curious, playful, happy, shy }
 
 /// Last known pointer position in global coordinates. Updated by a Listener at
 /// the app root so every duck on screen can watch the cursor.
@@ -214,7 +216,8 @@ class _DuckPainter extends CustomPainter {
         switch (mood) {
           DuckMood.curious => -0.12 + math.sin(phase * 2) * 0.02,
           DuckMood.thinking => math.sin(phase * 2) * 0.05,
-          DuckMood.sly => 0.06,
+          // Chin up and a little bounce: perky, not stern.
+          DuckMood.playful => -0.06 + math.sin(phase * 2) * 0.03,
           _ => bob * 0.025,
         } +
         math.sin(shake * math.pi * 6) * 0.28 * (1 - shake);
@@ -414,8 +417,7 @@ class _DuckPainter extends CustomPainter {
       return;
     }
 
-    final open =
-        (1 - blink).clamp(0.06, 1.0) * (mood == DuckMood.sly ? 0.55 : 1);
+    final open = (1 - blink).clamp(0.06, 1.0);
     canvas.save();
     canvas.translate(eye.dx, eye.dy);
     canvas.scale(1, open);
@@ -441,13 +443,22 @@ class _DuckPainter extends CustomPainter {
     );
     canvas.restore();
 
-    if (mood == DuckMood.sly || mood == DuckMood.curious) {
+    if (mood == DuckMood.playful || mood == DuckMood.curious) {
       final brow = Paint()
         ..color = VD.ink
         ..strokeWidth = 1.8
-        ..strokeCap = StrokeCap.round;
-      if (mood == DuckMood.sly) {
-        canvas.drawLine(eye.translate(-4.5, -6), eye.translate(4.5, -4), brow);
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      if (mood == DuckMood.playful) {
+        // A high, rounded brow reads as "ooh, try this one!" A low, flat
+        // brow over a squint read as suspicious, so avoid both.
+        canvas.drawArc(
+          Rect.fromCenter(center: eye.translate(0, -8.5), width: 9, height: 5),
+          math.pi + 0.35,
+          math.pi - 0.7,
+          false,
+          brow,
+        );
       } else {
         canvas.drawLine(eye.translate(-4, -8), eye.translate(4, -9.5), brow);
       }
@@ -470,6 +481,18 @@ class _DuckPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
+  }
+
+  void _sparkle(Canvas canvas, Offset c, double r, Color color) {
+    final w = r * 0.28;
+    final path = Path()
+      ..moveTo(c.dx, c.dy - r)
+      ..quadraticBezierTo(c.dx + w, c.dy - w, c.dx + r, c.dy)
+      ..quadraticBezierTo(c.dx + w, c.dy + w, c.dx, c.dy + r)
+      ..quadraticBezierTo(c.dx - w, c.dy + w, c.dx - r, c.dy)
+      ..quadraticBezierTo(c.dx - w, c.dy - w, c.dx, c.dy - r)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
   }
 
   void _paintThoughts(Canvas canvas) {
@@ -495,6 +518,20 @@ class _DuckPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(62, 6 + math.sin(phase * 2) * 2));
+    } else if (mood == DuckMood.playful) {
+      // Two twinkling sparkles: an idea worth playing with.
+      for (final (c, size, offset) in const [
+        (Offset(68, 14), 6.0, 0.0),
+        (Offset(80, 26), 3.8, 1.6),
+      ]) {
+        final t = (math.sin(phase * 3 + offset) + 1) / 2;
+        _sparkle(
+          canvas,
+          c,
+          size * (0.75 + t * 0.35),
+          VD.yellow.withValues(alpha: 0.6 + t * 0.4),
+        );
+      }
     }
   }
 

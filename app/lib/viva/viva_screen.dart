@@ -3,30 +3,18 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../core/api.dart';
+import '../core/ambient.dart';
 import '../core/duck.dart';
 import '../core/effects.dart';
 import '../core/models.dart';
+import '../core/shell_scope.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../report_teacher/report_screen.dart';
+import 'session_controller.dart';
 
-/// Total student turns in a viva: opening explanation + probe + what-if + trap.
-const _totalRounds = 4;
-
-/// A single insertion this long is treated as a paste.
-const _pasteThreshold = 25;
-
-class _Msg {
-  final bool fromDuck;
-  final String text;
-  final String? type; // opening | probe | what_if | trap
-  final bool pasted;
-  const _Msg.duck(this.text, this.type) : fromDuck = true, pasted = false;
-  const _Msg.student(this.text, {this.pasted = false})
-    : fromDuck = false,
-      type = null;
-}
+/// At this width and above the submission sits in a panel beside the chat.
+const _sideBySideWidth = 900.0;
 
 class _QType {
   final String label;
@@ -38,71 +26,69 @@ class _QType {
 
 _QType _qType(String? t) => switch (t) {
   'probe' => const _QType(
-    'Probe',
+    'Question · Understand',
     Icons.search_rounded,
     VD.teal,
     DuckMood.curious,
   ),
   'what_if' => const _QType(
-    'What if?',
+    'Question · Apply',
     Icons.alt_route_rounded,
     VD.orange,
     DuckMood.curious,
   ),
   // Don't reveal it's a trap to the student — that's on the report.
   'trap' => const _QType(
-    'Curveball',
-    Icons.sports_baseball_rounded,
-    Color(0xFF8B5CF6),
-    DuckMood.sly,
+    'Question · Analyse',
+    Icons.psychology_alt_outlined,
+    Color(0xFF6D5BD0),
+    DuckMood.playful,
   ),
   _ => const _QType(
-    'Warm-up',
-    Icons.waving_hand_rounded,
-    VD.partial,
+    'Marked',
+    Icons.chat_bubble_outline_rounded,
+    VD.inkSoft,
     DuckMood.idle,
   ),
 };
 
 class VivaScreen extends StatefulWidget {
-  final String sessionId;
-  final CreateSessionRequest request;
-  const VivaScreen({super.key, required this.sessionId, required this.request});
+  final SessionController controller;
+
+  /// Opens the follow-up chat for a graded answer, or one restored from the
+  /// device. The screen takes ownership of [controller].
+  const VivaScreen.withController(this.controller, {super.key});
 
   @override
   State<VivaScreen> createState() => _VivaScreenState();
 }
 
 class _VivaScreenState extends State<VivaScreen> {
+  late final SessionController _c = widget.controller;
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
-  final List<_Msg> _messages = [];
   final _confetti = ConfettiController();
-  int _round = 0;
-  bool _thinking = false;
-  bool _done = false;
   bool _pasted = false;
-  String? _error;
   int _lastLength = 0;
+  int _seenMessages = 0;
+
+  List<VivaMessage> get _messages => _c.messages;
+  CreateSessionRequest get _request => _c.request!;
 
   @override
   void initState() {
     super.initState();
-    final first = widget.request.studentName.split(' ').first;
-    final what = widget.request.kind == 'code' ? 'code' : 'writing';
-    _messages.add(
-      _Msg.duck(
-        "Hi $first! I've read your $what on “${widget.request.title}”. "
-            'Start by walking me through it in your own words — what does it do, and how?',
-        'opening',
-      ),
-    );
+    _seenMessages = _c.messages.length;
+    _c.addListener(_onChange);
     _input.addListener(_detectPaste);
+    _scrollToEnd();
   }
 
   @override
   void dispose() {
+    _c.removeListener(_onChange);
+    _c.dispose();
     _input.dispose();
     _scroll.dispose();
     _focus.dispose();
@@ -110,9 +96,21 @@ class _VivaScreenState extends State<VivaScreen> {
     super.dispose();
   }
 
+  void _onChange() {
+    if (!mounted) return;
+    setState(() {});
+    if (_c.messages.length > _seenMessages &&
+        _c.messages.last.fromDuck &&
+        !_c.finished) {
+      _focus.requestFocus();
+    }
+    _seenMessages = _c.messages.length;
+    _scrollToEnd();
+  }
+
   void _detectPaste() {
     final len = _input.text.length;
-    if (len - _lastLength >= _pasteThreshold && !_pasted) {
+    if (looksPasted(_lastLength, len) && !_pasted) {
       setState(() => _pasted = true);
     }
     if (len == 0 && _pasted) setState(() => _pasted = false);
@@ -120,90 +118,55 @@ class _VivaScreenState extends State<VivaScreen> {
   }
 
   DuckMood get _mood {
-    if (_done) return DuckMood.happy;
-    if (_thinking) return DuckMood.thinking;
+    if (_c.finished) return DuckMood.happy;
+    if (_c.loading) return DuckMood.thinking;
     final last = _messages.lastWhere((m) => m.fromDuck);
     return _qType(last.type).mood;
   }
 
-  Future<void> _send() async {
+  void _send() {
     final text = _input.text.trim();
-    if (text.isEmpty || _thinking || _done) return;
-    final pasted = _pasted;
-    setState(() {
-      _messages.add(_Msg.student(text, pasted: pasted));
-      _input.clear();
-      _pasted = false;
-      _lastLength = 0;
-      _error = null;
-    });
-    await _submit(text, pasted);
-  }
-
-  Future<void> _submit(String text, bool pasted) async {
-    setState(() {
-      _thinking = true;
-      _error = null;
-    });
-    _scrollToEnd();
-    try {
-      final res = await VivaApi.instance.submitTurn(
-        widget.sessionId,
-        text,
-        pasted: pasted,
-      );
-      if (!mounted) return;
-      setState(() {
-        _thinking = false;
-        _round = res.round;
-        if (res.done) {
-          _done = true;
-          _messages.add(
-            const _Msg.duck(
-              "That's a wrap! Thanks for talking it through with me. "
-                  "I'm putting together your report now.",
-              'done',
-            ),
-          );
-        } else {
-          _messages.add(_Msg.duck(res.question ?? '…', res.questionType));
-        }
-      });
-      if (_done) _confetti.fire(origin: const Offset(0.5, 0.6));
-      if (!_done) _focus.requestFocus();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _thinking = false;
-        _error = e.message;
-      });
+    if (text.isEmpty ||
+        _c.loading ||
+        _c.finished ||
+        _c.expired ||
+        _c.awaitingReply) {
+      return;
     }
-    _scrollToEnd();
-  }
-
-  void _retry() {
-    final last = _messages.lastWhere((m) => !m.fromDuck);
-    _submit(last.text, last.pasted);
+    final pasted = _pasted;
+    _input.clear();
+    _pasted = false;
+    _lastLength = 0;
+    _c.sendAnswer(text, pasted: pasted);
   }
 
   void _scrollToEnd() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) return;
-      _scroll.animateTo(
-        _scroll.position.maxScrollExtent + 200,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-      );
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Bubbles below the fold are laid out lazily, so the end can move once
+      // they are reached; follow it a few times so the newest is in view.
+      for (var i = 0; i < 4; i++) {
+        if (!mounted || !_scroll.hasClients) return;
+        final end = _scroll.position.maxScrollExtent;
+        if ((end - _scroll.offset).abs() < 1) return;
+        await _scroll.animateTo(
+          end,
+          duration: Duration(milliseconds: i == 0 ? 400 : 150),
+          curve: Curves.easeOutCubic,
+        );
+      }
     });
   }
 
   Future<bool> _confirmLeave() async {
-    if (_done || _messages.length <= 1) return true;
+    if (_c.finished || _c.expired || _messages.length <= 1) return true;
     final leave = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Leave this viva?'),
-        content: const Text("Your answers so far won't be scored."),
+        content: const Text(
+          'Your answers are saved on this device. '
+          'You can continue the viva later from the start screen.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c, false),
@@ -222,7 +185,7 @@ class _VivaScreenState extends State<VivaScreen> {
   void _openReport() {
     Navigator.of(
       context,
-    ).pushReplacement(vdRoute(ReportScreen(sessionId: widget.sessionId)));
+    ).pushReplacement(vdRoute(ReportScreen(sessionId: _c.sessionId!)));
   }
 
   void _showSubmission() {
@@ -238,7 +201,7 @@ class _VivaScreenState extends State<VivaScreen> {
         builder: (c, sc) => SingleChildScrollView(
           controller: sc,
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-          child: _SubmissionView(request: widget.request),
+          child: _SubmissionView(request: _request),
         ),
       ),
     );
@@ -246,20 +209,30 @@ class _VivaScreenState extends State<VivaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = context.width >= Breakpoints.desktop;
+    // In the app shell the viva is a single centred chat column, like a chat
+    // app; the work opens in a sheet from the top bar instead of a side panel.
+    final shell = context.inShell;
+    final wide = !shell && context.width >= _sideBySideWidth;
     final chat = _ChatColumn(
       messages: _messages,
       scroll: _scroll,
-      thinking: _thinking,
-      error: _error,
-      onRetry: _retry,
-      footer: _done
+      thinking: _c.loading,
+      error: _c.loading ? null : _c.error,
+      onRetry: _c.canRetry ? _c.retry : null,
+      footer: _c.finished
           ? _DoneBar(onReport: _openReport)
           : _Composer(
               controller: _input,
               focus: _focus,
               pasted: _pasted,
-              enabled: !_thinking,
+              enabled: !_c.loading && !_c.awaitingReply && !_c.expired,
+              hint: _c.loading
+                  ? 'The duck is thinking…'
+                  : _c.expired
+                  ? 'Start a new viva from the start screen.'
+                  : _c.awaitingReply
+                  ? 'Use Try again to resend your answer.'
+                  : 'Explain in your own words…',
               onSend: _send,
             ),
     );
@@ -275,49 +248,57 @@ class _VivaScreenState extends State<VivaScreen> {
       child: Confetti(
         controller: _confetti,
         child: Scaffold(
-          body: SafeArea(
-            child: PageBody(
-              maxWidth: 1240,
-              child: Column(
-                children: [
-                  VDTopBar(
-                    showBack: true,
-                    actions: [
-                      if (!wide)
-                        IconButton(
-                          tooltip: 'View my work',
-                          onPressed: _showSubmission,
-                          icon: const Icon(Icons.description_outlined),
-                        ),
-                      const ThemeToggle(),
+          body: Ambient(
+            child: SafeArea(
+              child: PageBody(
+                maxWidth: shell ? 860 : 1240,
+                child: Column(
+                  children: [
+                    VDTopBar(
+                      showBack: true,
+                      actions: [
+                        if (!wide)
+                          IconButton(
+                            tooltip: 'View my answer',
+                            onPressed: _showSubmission,
+                            icon: const Icon(Icons.description_outlined),
+                          ),
+                        // Phones have no room for both; the theme can be
+                        // changed from the other screens.
+                        if (!context.isPhone) const ThemeToggle(),
+                      ],
+                    ),
+                    if (!wide) ...[
+                      _CompactHeader(
+                        mood: _mood,
+                        round: _c.round,
+                        done: _c.finished,
+                      ),
+                      const SizedBox(height: 8),
                     ],
-                  ),
-                  if (!wide) ...[
-                    _CompactHeader(mood: _mood, round: _round, done: _done),
-                    const SizedBox(height: 8),
-                  ],
-                  Expanded(
-                    child: wide
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              SizedBox(
-                                width: 360,
-                                child: _SidePanel(
-                                  mood: _mood,
-                                  round: _round,
-                                  done: _done,
-                                  request: widget.request,
+                    Expanded(
+                      child: wide
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  width: context.width >= 1080 ? 360 : 300,
+                                  child: _SidePanel(
+                                    mood: _mood,
+                                    round: _c.round,
+                                    done: _c.finished,
+                                    request: _request,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 24),
-                              Expanded(child: chat),
-                            ],
-                          )
-                        : chat,
-                  ),
-                  const SizedBox(height: 12),
-                ],
+                                const SizedBox(width: 24),
+                                Expanded(child: chat),
+                              ],
+                            )
+                          : chat,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
               ),
             ),
           ),
@@ -329,7 +310,7 @@ class _VivaScreenState extends State<VivaScreen> {
 
 // ── Progress ─────────────────────────────────────────────────────────────────
 
-const _stepLabels = ['Explain', 'Probe', 'What if', 'Curveball'];
+const _stepLabels = ['Understand', 'Apply', 'Analyse'];
 
 class _Progress extends StatelessWidget {
   final int round;
@@ -345,7 +326,7 @@ class _Progress extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        for (var i = 0; i < _totalRounds; i++) ...[
+        for (var i = 0; i < totalRounds; i++) ...[
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,7 +354,7 @@ class _Progress extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: i == round && !done
-                          ? FontWeight.w900
+                          ? FontWeight.w700
                           : FontWeight.w600,
                       color: i == round && !done
                           ? context.ink
@@ -384,7 +365,7 @@ class _Progress extends StatelessWidget {
               ],
             ),
           ),
-          if (i < _totalRounds - 1) const SizedBox(width: 6),
+          if (i < totalRounds - 1) const SizedBox(width: 6),
         ],
       ],
     );
@@ -413,8 +394,8 @@ class _CompactHeader extends StatelessWidget {
             children: [
               Text(
                 done
-                    ? 'Viva complete'
-                    : 'Question ${round + 1} of $_totalRounds',
+                    ? 'Follow-ups complete'
+                    : 'Question ${round + 1} of $totalRounds',
                 style: context.text.titleMedium,
               ),
               const SizedBox(height: 6),
@@ -443,8 +424,8 @@ class _SidePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = switch (mood) {
       DuckMood.thinking => 'Thinking about your answer…',
-      DuckMood.happy => 'All done, nice work!',
-      DuckMood.sly => 'Think carefully about this one.',
+      DuckMood.happy => 'All done. Nice work.',
+      DuckMood.playful => 'A tricky one this time.',
       DuckMood.curious => 'Curious about your reasoning.',
       DuckMood.idle || DuckMood.shy => 'Listening.',
     };
@@ -452,7 +433,10 @@ class _SidePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          VDCard(
+          // The duck floats on the backdrop itself rather than in a box, so
+          // the side panel has one card (the work) instead of two.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: Column(
               children: [
                 Duck(size: 150, mood: mood, jumpSignal: round),
@@ -470,7 +454,7 @@ class _SidePanel extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 28),
           VDCard(child: _SubmissionView(request: request, maxLines: 18)),
         ],
       ),
@@ -485,24 +469,26 @@ class _SubmissionView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final code = request.kind == 'code';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(
-              code ? Icons.code_rounded : Icons.notes_rounded,
-              size: 18,
-              color: context.inkSoft,
-            ),
-            const SizedBox(width: 6),
             Expanded(
               child: Text(request.title, style: context.text.titleMedium),
             ),
-            if (code && request.language != null)
-              Pill(request.language!, color: VD.teal),
+            if (request.source == 'photo')
+              const Pill(
+                'From a photo',
+                color: VD.teal,
+                icon: Icons.photo_camera_outlined,
+              ),
           ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          request.question.prompt,
+          style: TextStyle(color: context.inkSoft, fontSize: 13.5, height: 1.5),
         ),
         const SizedBox(height: 12),
         Container(
@@ -510,18 +496,13 @@ class _SubmissionView extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: context.bg,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(10),
           ),
-          child: SingleChildScrollView(
-            scrollDirection: code ? Axis.horizontal : Axis.vertical,
-            child: Text(
-              request.submission,
-              maxLines: maxLines,
-              overflow: maxLines == null ? null : TextOverflow.fade,
-              style: code
-                  ? monoStyle(context, size: 12.5)
-                  : context.text.bodyMedium,
-            ),
+          child: Text(
+            request.answerText,
+            maxLines: maxLines,
+            overflow: maxLines == null ? null : TextOverflow.fade,
+            style: context.text.bodyMedium,
           ),
         ),
       ],
@@ -532,11 +513,11 @@ class _SubmissionView extends StatelessWidget {
 // ── Chat ─────────────────────────────────────────────────────────────────────
 
 class _ChatColumn extends StatelessWidget {
-  final List<_Msg> messages;
+  final List<VivaMessage> messages;
   final ScrollController scroll;
   final bool thinking;
   final String? error;
-  final VoidCallback onRetry;
+  final VoidCallback? onRetry;
   final Widget footer;
 
   const _ChatColumn({
@@ -550,6 +531,31 @@ class _ChatColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final list = ListView(
+      controller: scroll,
+      padding: EdgeInsets.all(context.isPhone ? 14 : 24),
+      children: [
+        for (final m in messages)
+          FadeSlideIn(
+            key: ObjectKey(m),
+            from: Offset(m.fromDuck ? -0.04 : 0.04, 0.05),
+            child: _Bubble(msg: m),
+          ),
+        if (thinking) const _TypingBubble(),
+        if (error != null) _ErrorRow(message: error!, onRetry: onRetry),
+      ],
+    );
+    if (context.inShell) {
+      // Chat-app style: the conversation sits on the page and the composer
+      // floats in its own card at the bottom.
+      return Column(
+        children: [
+          Expanded(child: list),
+          VDCard(padding: const EdgeInsets.all(12), child: footer),
+          const SizedBox(height: 8),
+        ],
+      );
+    }
     return VDCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -582,7 +588,7 @@ class _ChatColumn extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  final _Msg msg;
+  final VivaMessage msg;
   const _Bubble({required this.msg});
 
   @override
@@ -595,17 +601,15 @@ class _Bubble extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       decoration: BoxDecoration(
         color: duck
-            ? (context.isDark ? VD.darkBg : VD.yellowSoft)
-            : (context.isDark ? const Color(0xFF3B4A80) : VD.ink),
+            ? (context.isDark ? VD.darkBg : const Color(0xFFF1F3F6))
+            : (context.isDark ? const Color(0xFF2E3A57) : VD.ink),
         borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(20),
-          topRight: const Radius.circular(20),
-          bottomLeft: Radius.circular(duck ? 6 : 20),
-          bottomRight: Radius.circular(duck ? 20 : 6),
+          topLeft: const Radius.circular(14),
+          topRight: const Radius.circular(14),
+          bottomLeft: Radius.circular(duck ? 4 : 14),
+          bottomRight: Radius.circular(duck ? 14 : 4),
         ),
-        border: duck && msg.type == 'trap'
-            ? Border.all(color: q.color.withValues(alpha: 0.5), width: 1.5)
-            : null,
+        border: duck ? Border.all(color: context.line) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -619,7 +623,7 @@ class _Bubble extends StatelessWidget {
             style: context.text.bodyLarge?.copyWith(
               height: 1.5,
               color: duck ? context.ink : Colors.white,
-              fontWeight: duck ? FontWeight.w600 : FontWeight.w500,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ],
@@ -712,7 +716,7 @@ class _TypingBubbleState extends State<_TypingBubble>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             decoration: BoxDecoration(
-              color: context.isDark ? VD.darkBg : VD.yellowSoft,
+              color: context.isDark ? VD.darkBg : const Color(0xFFF1F3F6),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
@@ -757,7 +761,7 @@ class _TypingBubbleState extends State<_TypingBubble>
 
 class _ErrorRow extends StatelessWidget {
   final String message;
-  final VoidCallback onRetry;
+  final VoidCallback? onRetry;
   const _ErrorRow({required this.message, required this.onRetry});
 
   @override
@@ -779,7 +783,12 @@ class _ErrorRow extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
+          if (onRetry != null)
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
+              child: const Text('Try again'),
+            ),
         ],
       ),
     );
@@ -791,6 +800,7 @@ class _Composer extends StatelessWidget {
   final FocusNode focus;
   final bool pasted;
   final bool enabled;
+  final String hint;
   final VoidCallback onSend;
 
   const _Composer({
@@ -798,6 +808,7 @@ class _Composer extends StatelessWidget {
     required this.focus,
     required this.pasted,
     required this.enabled,
+    required this.hint,
     required this.onSend,
   });
 
@@ -844,23 +855,24 @@ class _Composer extends StatelessWidget {
                   if (!phone)
                     const SingleActivator(LogicalKeyboardKey.enter): onSend,
                 },
-                child: TextField(
-                  controller: controller,
-                  focusNode: focus,
-                  autofocus: !phone,
-                  minLines: 1,
-                  maxLines: 6,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    hintText: enabled
-                        ? 'Explain in your own words…'
-                        : 'The duck is thinking…',
-                    helperText: phone
-                        ? null
-                        : 'Enter to send · Shift+Enter for a new line',
-                    helperStyle: TextStyle(
-                      color: context.inkSoft,
-                      fontSize: 11.5,
+                child: Semantics(
+                  label: 'Your answer',
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focus,
+                    autofocus: !phone,
+                    minLines: 1,
+                    maxLines: 6,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: hint,
+                      helperText: phone
+                          ? null
+                          : 'Enter to send · Shift+Enter for a new line',
+                      helperStyle: TextStyle(
+                        color: context.inkSoft,
+                        fontSize: 11.5,
+                      ),
                     ),
                   ),
                 ),
@@ -880,8 +892,8 @@ class _Composer extends StatelessWidget {
                       tooltip: 'Send',
                       onPressed: can ? onSend : null,
                       style: IconButton.styleFrom(
-                        backgroundColor: VD.orange,
-                        foregroundColor: Colors.white,
+                        backgroundColor: context.isDark ? VD.yellow : VD.ink,
+                        foregroundColor: context.isDark ? VD.ink : Colors.white,
                         minimumSize: const Size(50, 50),
                       ),
                       icon: const Icon(Icons.arrow_upward_rounded),
@@ -906,11 +918,11 @@ class _DoneBar extends StatelessWidget {
     return FadeSlideIn(
       child: Row(
         children: [
-          const Icon(Icons.celebration_rounded, color: VD.orange),
+          const Icon(Icons.check_circle_rounded, color: VD.solid),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Viva complete. Your report is ready.',
+              'Follow-ups complete. Your report is ready.',
               style: context.text.titleMedium,
             ),
           ),

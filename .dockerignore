@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+.idea
+build
+**/node_modules
+backend/.env
+backend/data
+app/build
+app/.dart_tool
+app/android
+app/ios
+app/.flutter-plugins-dependencies
+**/*.iml

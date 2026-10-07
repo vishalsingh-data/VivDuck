@@ -1,20 +1,32 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_screen.dart';
+import '../core/ambient.dart';
 import '../core/api.dart';
 import '../core/auth.dart';
 import '../core/duck.dart';
 import '../core/effects.dart';
 import '../core/models.dart';
+import '../core/recent.dart';
+import '../core/shell_scope.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../viva/submit_screen.dart';
 import 'charts.dart';
+import 'rubric_points.dart';
 import 'teacher_screen.dart';
 
 class ReportScreen extends StatefulWidget {
   final String sessionId;
-  const ReportScreen({super.key, required this.sessionId});
+
+  /// Add this viva to the user's recent list. Off when a teacher is
+  /// reviewing a student's report.
+  final bool remember;
+  const ReportScreen({
+    super.key,
+    required this.sessionId,
+    this.remember = true,
+  });
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -27,7 +39,9 @@ class _ReportScreenState extends State<ReportScreen> {
   Future<Report> _load() async {
     for (var attempt = 0; ; attempt++) {
       try {
-        return await VivaApi.instance.getReport(widget.sessionId);
+        final report = await VivaApi.instance.getReport(widget.sessionId);
+        if (widget.remember) RecentVivas.instance.add(report);
+        return report;
       } on ApiException catch (e) {
         if (e.status != 409 || attempt >= 5) rethrow;
         await Future.delayed(const Duration(seconds: 2));
@@ -38,52 +52,54 @@ class _ReportScreenState extends State<ReportScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: FutureBuilder<Report>(
-          future: _future,
-          builder: (context, snap) {
-            final Widget body;
-            if (snap.hasError) {
-              body = ErrorState(
-                message: snap.error.toString(),
-                onRetry: () => setState(() => _future = _load()),
-              );
-            } else if (!snap.hasData) {
-              body = const _Marking();
-            } else {
-              body = _Celebrate(report: snap.data!);
-            }
-            return Column(
-              children: [
-                PageBody(
-                  child: VDTopBar(
-                    showBack: true,
-                    actions: [
-                      if (snap.hasData &&
-                          !context.isPhone &&
-                          (Auth.instance.user?.isTeacher ?? false))
-                        TextButton.icon(
-                          onPressed: () => openGated(
-                            context,
-                            page: const TeacherScreen(),
-                            role: UserRole.teacher,
+      body: Ambient(
+        child: SafeArea(
+          child: FutureBuilder<Report>(
+            future: _future,
+            builder: (context, snap) {
+              final Widget body;
+              if (snap.hasError) {
+                body = ErrorState(
+                  message: snap.error.toString(),
+                  onRetry: () => setState(() => _future = _load()),
+                );
+              } else if (!snap.hasData) {
+                body = const _Marking();
+              } else {
+                body = _ReportBody(report: snap.data!);
+              }
+              return Column(
+                children: [
+                  PageBody(
+                    child: VDTopBar(
+                      showBack: true,
+                      actions: [
+                        if (snap.hasData &&
+                            !context.isPhone &&
+                            (Auth.instance.user?.isTeacher ?? false))
+                          TextButton.icon(
+                            onPressed: () => openGated(
+                              context,
+                              page: const TeacherScreen(),
+                              role: UserRole.teacher,
+                            ),
+                            icon: const Icon(Icons.insights_rounded),
+                            label: const Text('Class view'),
                           ),
-                          icon: const Icon(Icons.insights_rounded),
-                          label: const Text('Class view'),
-                        ),
-                      const ThemeToggle(),
-                    ],
+                        const ThemeToggle(),
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 400),
-                    child: body,
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 400),
+                      child: body,
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -101,52 +117,16 @@ class _Marking extends StatelessWidget {
         children: [
           const Duck(size: 160, mood: DuckMood.thinking),
           const SizedBox(height: 12),
-          Text('Marking your viva…', style: context.text.headlineSmall),
+          Text('Preparing your report…', style: context.text.headlineSmall),
           const SizedBox(height: 6),
           Text(
-            'Checking every key point against what you said.',
+            'Re-grading the rubric with your follow-up answers.',
             style: TextStyle(color: context.inkSoft),
           ),
         ],
       ),
     );
   }
-}
-
-/// Shows the report and throws confetti for a big improvement.
-class _Celebrate extends StatefulWidget {
-  final Report report;
-  const _Celebrate({required this.report});
-
-  @override
-  State<_Celebrate> createState() => _CelebrateState();
-}
-
-class _CelebrateState extends State<_Celebrate> {
-  final _confetti = ConfettiController();
-
-  @override
-  void initState() {
-    super.initState();
-    final r = widget.report;
-    if (r.scoreAfter - r.scoreBefore >= 15) {
-      Future.delayed(const Duration(milliseconds: 1200), () {
-        if (mounted) _confetti.fire(origin: const Offset(0.5, 0.25));
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _confetti.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Confetti(
-    controller: _confetti,
-    child: _ReportBody(report: widget.report),
-  );
 }
 
 class _ReportBody extends StatelessWidget {
@@ -157,7 +137,7 @@ class _ReportBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final phone = context.isPhone;
     final desktop = context.isDesktop;
-    const gap = SizedBox(height: 20, width: 20);
+    const gap = SizedBox(height: 24, width: 24);
 
     final score = _ScoreCard(report: report);
     final bloom = _BloomCard(level: report.bloomReached);
@@ -170,12 +150,16 @@ class _ReportBody extends StatelessWidget {
           children: [
             FadeSlideIn(child: _Header(report: report)),
             const SizedBox(height: 24),
+            if (report.review.needsReview) ...[
+              ReviewBanner(review: report.review),
+              const SizedBox(height: 24),
+            ],
             if (desktop)
               IntrinsicHeight(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(flex: 5, child: FadeSlideIn(child: score)),
+                    Expanded(flex: 6, child: FadeSlideIn(child: score)),
                     gap,
                     Expanded(
                       flex: 4,
@@ -224,7 +208,16 @@ class _ReportBody extends StatelessWidget {
             gap,
             FadeSlideIn(
               delay: const Duration(milliseconds: 250),
-              child: _KeyPointsCard(report: report),
+              child: RubricPointsCard(
+                points: report.keyPoints,
+                subtitle:
+                    'After the follow-up questions. Quotes come from your answer or your replies.',
+              ),
+            ),
+            gap,
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 280),
+              child: _AnswerCard(report: report),
             ),
             gap,
             FadeSlideIn(
@@ -238,11 +231,13 @@ class _ReportBody extends StatelessWidget {
               runSpacing: 12,
               children: [
                 FilledButton.icon(
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).pushReplacement(vdRoute(const SubmitScreen())),
+                  onPressed: () => context.inShell
+                      ? Navigator.of(context).popUntil((r) => r.isFirst)
+                      : Navigator.of(
+                          context,
+                        ).pushReplacement(vdRoute(const SubmitScreen())),
                   icon: const Icon(Icons.replay_rounded),
-                  label: const Text('Start another viva'),
+                  label: const Text('Answer another question'),
                 ),
                 OutlinedButton.icon(
                   onPressed: () =>
@@ -267,11 +262,9 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gain = report.scoreAfter - report.scoreBefore;
-    final headline = gain >= 20
-        ? 'Big improvement!'
-        : gain > 0
-        ? 'Nice progress.'
-        : 'Good effort. Keep practising.';
+    final headline = gain > 0
+        ? 'Score rose from ${report.scoreBefore} to ${report.scoreAfter}'
+        : 'Scored ${report.scoreAfter} out of 100';
     return Row(
       children: [
         Expanded(
@@ -279,11 +272,11 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'VIVA REPORT · ${report.title.toUpperCase()}',
+                'GRADE REPORT · ${report.title.toUpperCase()}',
                 style: TextStyle(
                   fontSize: 12,
                   letterSpacing: 1,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   color: context.inkSoft,
                 ),
               ),
@@ -314,7 +307,7 @@ class _ScoreCard extends StatelessWidget {
     final ring = ScoreRing(
       before: report.scoreBefore,
       after: report.scoreAfter,
-      size: phone ? 170 : 190,
+      size: phone ? 170 : 168,
     );
     final legend = Column(
       crossAxisAlignment: phone
@@ -322,19 +315,23 @@ class _ScoreCard extends StatelessWidget {
           : CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text('Understanding score', style: context.text.titleLarge),
+        Text(
+          'Score',
+          style: context.text.titleLarge?.copyWith(fontSize: 20, height: 1.2),
+        ),
         const SizedBox(height: 14),
         _Legend(
           color: VD.inkSoft,
-          label: 'Before the viva',
+          label: 'Written answer',
           value: report.scoreBefore,
         ),
         const SizedBox(height: 8),
         _Legend(
           color: VD.orange,
-          label: 'After the viva',
+          label: 'After follow-ups',
           value: report.scoreAfter,
         ),
+
         const SizedBox(height: 16),
         Pill(
           '${gain >= 0 ? '+' : ''}$gain points',
@@ -355,15 +352,31 @@ class _ScoreCard extends StatelessWidget {
     );
     return VDCard(
       padding: const EdgeInsets.all(24),
-      child: phone
-          ? Column(children: [ring, const SizedBox(height: 20), legend])
-          : Row(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (phone)
+            Column(children: [ring, const SizedBox(height: 20), legend])
+          else
+            Row(
               children: [
                 ring,
-                const SizedBox(width: 28),
-                Expanded(child: legend),
+                const SizedBox(width: 24),
+                // Scale the legend down rather than letting words break
+                // mid-letter when the card is narrow.
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: legend,
+                  ),
+                ),
               ],
             ),
+          const SizedBox(height: 16),
+          GradingRunsNote(runs: report.gradingRuns),
+        ],
+      ),
     );
   }
 }
@@ -396,7 +409,7 @@ class _Legend extends StatelessWidget {
         const SizedBox(width: 10),
         CountUp(
           value,
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
         ),
       ],
     );
@@ -442,7 +455,7 @@ class _BloomCard extends StatelessWidget {
                   text: level,
                   style: const TextStyle(
                     color: VD.teal,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
@@ -468,7 +481,7 @@ class _TrapCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('The curveball', style: context.text.titleLarge),
+          Text('Trap question', style: context.text.titleLarge),
           const SizedBox(height: 4),
           Text(
             'One question was a deliberate trap.',
@@ -499,7 +512,7 @@ class _TrapCard extends StatelessWidget {
           const SizedBox(height: 12),
           Center(
             child: Text(
-              caught ? 'You spotted it!' : 'It caught you out',
+              caught ? 'Caught' : 'Missed',
               style: context.text.titleLarge?.copyWith(color: c),
             ),
           ),
@@ -511,255 +524,50 @@ class _TrapCard extends StatelessWidget {
               style: TextStyle(color: context.inkSoft, height: 1.5),
             ),
           ],
-          const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: VD.partial.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.gps_fixed_rounded,
-                  size: 18,
-                  color: VD.partial,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        const TextSpan(
-                          text: 'Weakest point: ',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        TextSpan(text: report.weakestKeyPoint),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _KeyPointsCard extends StatefulWidget {
+class _AnswerCard extends StatelessWidget {
   final Report report;
-  const _KeyPointsCard({required this.report});
-
-  @override
-  State<_KeyPointsCard> createState() => _KeyPointsCardState();
-}
-
-class _KeyPointsCardState extends State<_KeyPointsCard> {
-  KeyPointStatus? _filter;
+  const _AnswerCard({required this.report});
 
   @override
   Widget build(BuildContext context) {
-    final kps = widget.report.keyPoints;
-    int count(KeyPointStatus s) => kps.where((k) => k.status == s).length;
-    final shown = _filter == null
-        ? kps
-        : kps.where((k) => k.status == _filter).toList();
-
+    final photo = report.source == 'photo';
     return VDCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 12,
-            runSpacing: 10,
+          Row(
             children: [
-              Text('Key points', style: context.text.titleLarge),
-              Text(
-                'Tap one to see what you said',
-                style: TextStyle(color: context.inkSoft, fontSize: 13),
+              Expanded(
+                child: Text('The answer', style: context.text.titleLarge),
+              ),
+              Pill(
+                photo ? 'From a photo' : 'Typed',
+                color: photo ? VD.teal : VD.inkSoft,
+                icon: photo
+                    ? Icons.photo_camera_outlined
+                    : Icons.keyboard_outlined,
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          StatusBar(
-            solid: count(KeyPointStatus.solid),
-            partial: count(KeyPointStatus.partial),
-            missing: count(KeyPointStatus.missing),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _FilterChip(
-                label: 'All ${kps.length}',
-                color: context.ink,
-                selected: _filter == null,
-                onTap: () => setState(() => _filter = null),
-              ),
-              for (final s in KeyPointStatus.values)
-                _FilterChip(
-                  label: '${statusLabel(s)} ${count(s)}',
-                  color: statusColor(s),
-                  selected: _filter == s,
-                  onTap: () =>
-                      setState(() => _filter = _filter == s ? null : s),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-            alignment: Alignment.topCenter,
-            child: Column(
-              children: [
-                for (var i = 0; i < shown.length; i++)
-                  FadeSlideIn(
-                    key: ValueKey(shown[i].id),
-                    delay: Duration(milliseconds: 60 * i),
-                    from: const Offset(0.04, 0),
-                    child: _KeyPointTile(kp: shown[i]),
-                  ),
-              ],
+          if (report.questionPrompt.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              report.questionPrompt,
+              style: TextStyle(color: context.inkSoft, height: 1.5),
             ),
+          ],
+          const SizedBox(height: 12),
+          SelectableText(
+            report.answerText,
+            style: context.text.bodyLarge?.copyWith(height: 1.6),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-  const _FilterChip({
-    required this.label,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      showCheckmark: false,
-      selectedColor: color.withValues(alpha: 0.16),
-      labelStyle: TextStyle(
-        fontWeight: FontWeight.w800,
-        color: selected ? color : context.inkSoft,
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(99),
-        side: BorderSide(color: selected ? color : context.line, width: 1.5),
-      ),
-    );
-  }
-}
-
-class _KeyPointTile extends StatefulWidget {
-  final KeyPoint kp;
-  const _KeyPointTile({required this.kp});
-
-  @override
-  State<_KeyPointTile> createState() => _KeyPointTileState();
-}
-
-class _KeyPointTileState extends State<_KeyPointTile> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final kp = widget.kp;
-    final c = statusColor(kp.status);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Material(
-        color: context.bg,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => setState(() => _open = !_open),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(statusIcon(kp.status), color: c, size: 22),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        kp.statement,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (!context.isPhone)
-                      Pill(statusLabel(kp.status), color: c),
-                    AnimatedRotation(
-                      turns: _open ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
-                      child: Icon(
-                        Icons.expand_more_rounded,
-                        color: context.inkSoft,
-                      ),
-                    ),
-                  ],
-                ),
-                AnimatedCrossFade(
-                  duration: const Duration(milliseconds: 220),
-                  crossFadeState: _open
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  firstChild: const SizedBox(width: double.infinity),
-                  secondChild: Padding(
-                    padding: const EdgeInsets.only(left: 32, top: 10),
-                    child: kp.evidenceQuote == null
-                        ? Text(
-                            "You didn't mention this one. Worth adding to your review list.",
-                            style: TextStyle(
-                              color: context.inkSoft,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          )
-                        : Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                left: BorderSide(color: c, width: 3),
-                              ),
-                            ),
-                            child: Text(
-                              '“${kp.evidenceQuote}”',
-                              style: TextStyle(
-                                color: context.inkSoft,
-                                fontStyle: FontStyle.italic,
-                                height: 1.5,
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -853,12 +661,14 @@ class _ListCardState extends State<_ListCard> {
                   '${_done.length}/${widget.items.length}',
                   style: TextStyle(
                     color: context.inkSoft,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 12),
+          if (widget.items.isEmpty)
+            Text('Nothing to list.', style: TextStyle(color: context.inkSoft)),
           for (var i = 0; i < widget.items.length; i++)
             widget.checklist
                 ? InkWell(

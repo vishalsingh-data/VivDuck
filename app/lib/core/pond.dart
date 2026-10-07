@@ -66,7 +66,7 @@ class _PondBackgroundState extends State<PondBackground>
     ),
   );
   late final List<Offset> _stars = List.generate(
-    40,
+    24,
     (_) => Offset(_seed.nextDouble(), _seed.nextDouble()),
   );
 
@@ -241,34 +241,43 @@ class _PondPainter extends CustomPainter {
         ).createShader(rect),
     );
 
-    // Sun or moon with a soft breathing glow
-    final orb = Offset(w * 0.82, surface * 0.22);
+    // Sun or moon with a soft breathing glow. Narrow screens skip it: the
+    // headline fills the sky there and the orb would only crowd it.
+    final narrow = w < 600;
+    // Far right, below the top bar and clear of the duck's speech bubble,
+    // which sits around the 60–85% mark.
+    final orb = Offset(w * 0.93, 112);
     final glow = 1 + math.sin(_t * 0.8) * 0.06;
-    canvas.drawCircle(
-      orb,
-      90 * glow,
-      Paint()
-        ..shader = RadialGradient(
-          colors: dark
-              ? [
-                  const Color(0xFFDDE6FF).withValues(alpha: 0.18),
-                  Colors.transparent,
-                ]
-              : [VD.yellow.withValues(alpha: 0.45), Colors.transparent],
-        ).createShader(Rect.fromCircle(center: orb, radius: 90 * glow)),
-    );
-    canvas.drawCircle(
-      orb,
-      28,
-      Paint()..color = dark ? const Color(0xFFF1F4FF) : const Color(0xFFFFD45C),
-    );
-    if (dark) {
-      // Crescent bite
+    if (!narrow) {
       canvas.drawCircle(
-        orb.translate(10, -6),
-        24,
-        Paint()..color = const Color(0xFF111833),
+        orb,
+        90 * glow,
+        Paint()
+          ..shader = RadialGradient(
+            colors: dark
+                ? [
+                    const Color(0xFFDDE6FF).withValues(alpha: 0.18),
+                    Colors.transparent,
+                  ]
+                : [VD.yellow.withValues(alpha: 0.45), Colors.transparent],
+          ).createShader(Rect.fromCircle(center: orb, radius: 90 * glow)),
       );
+      canvas.drawCircle(
+        orb,
+        28,
+        Paint()
+          ..color = dark ? const Color(0xFFF1F4FF) : const Color(0xFFFFD45C),
+      );
+      if (dark) {
+        // Crescent bite
+        canvas.drawCircle(
+          orb.translate(10, -6),
+          24,
+          Paint()..color = const Color(0xFF111833),
+        );
+      }
+    }
+    if (dark) {
       for (final s in stars) {
         final tw = (math.sin(_t * 1.5 + s.dx * 40) + 1) / 2;
         canvas.drawCircle(

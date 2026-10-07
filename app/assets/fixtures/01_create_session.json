@@ -1,20 +1,64 @@
 {
-  "title": "Create Session",
+  "title": "Submit Answer (creates a session)",
   "method": "POST",
   "path": "/sessions",
+  "notes": "Grades the answer against the question's rubric twice and returns the grade plus the first follow-up question. score = the rounded mean of the two runs. Every solid or partial point must carry a quote copied exactly from answer_text; a point whose quote is not found is set to missing and adds an evidence_check review reason. needs_review is true when any reason applies.",
   "request": {
     "student_name": "Alice Nguyen",
-    "title": "Binary search",
-    "kind": "code",
-    "submission": "def binary_search(arr, target):\n    lo, hi = 0, len(arr) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n",
-    "language": "python",
-    "sample_id": "binary_search"
+    "question_id": "binary_search",
+    "answer_text": "Binary search only works on a sorted list. It looks at the middle element and compares it with the target. If the target is bigger it throws away the left half, otherwise the right half. It keeps halving until it finds the value or there is nothing left, so it takes about log n steps.",
+    "source": "typed",
+    "pasted": false,
+    "transcription": null
+  },
+  "request_photo_example": {
+    "student_name": "Rahul Verma",
+    "question_id": "binary_search",
+    "answer_text": "Binary search needs a sorted list ...",
+    "source": "photo",
+    "pasted": false,
+    "transcription": { "legibility": "unclear", "confidence": 0.74, "edited": true }
   },
   "response": {
-    "session_id": "s_k3f9"
+    "session_id": "s_k3f9",
+    "grade": {
+      "score": 76,
+      "runs": [74, 78],
+      "points": [
+        {
+          "id": "kp1",
+          "statement": "The list must be sorted, because each comparison relies on order to rule out half the list.",
+          "weight": 3,
+          "status": "partial",
+          "comment": "Says the list must be sorted but not why order matters.",
+          "evidence_quote": "Binary search only works on a sorted list."
+        },
+        {
+          "id": "kp6",
+          "statement": "It is much faster than linear search on large lists, which checks every element.",
+          "weight": 1,
+          "status": "missing",
+          "comment": "Not covered. Compare it with linear search.",
+          "evidence_quote": null
+        }
+      ],
+      "review": {
+        "needs_review": false,
+        "reasons": []
+      }
+    },
+    "question": "You said the list has to be sorted. What exactly goes wrong if it isn't?",
+    "question_type": "probe",
+    "round": 0
+  },
+  "review_reason_codes": {
+    "evidence_check": "A quote was not found in the answer, so that point was set to missing.",
+    "runs_differ": "The two grading runs differ by more than 10 points.",
+    "pasted": "The answer was pasted.",
+    "handwriting": "The handwriting was hard to read."
   },
   "errors": [
-    { "status": 400, "meaning": "Bad input — missing or invalid field", "body": { "error": "request body is invalid" } },
+    { "status": 400, "meaning": "Bad input — missing or invalid field, or unknown question_id", "body": { "error": "request body is invalid" } },
     { "status": 502, "meaning": "Upstream AI service unavailable", "body": { "error": "The duck is having trouble thinking. Please try again." } }
   ]
 }

@@ -1,0 +1,101 @@
+{
+  "id": "binary_search",
+  "title": "Binary search",
+  "subject": "Algorithms",
+  "prompt": "Explain how binary search finds a value in a list. Say why the list must be sorted, how the search range changes at each step, when the search stops, and how fast it is.",
+  "marks": 10,
+  "points": [
+    {
+      "id": "kp1",
+      "statement": "The list must be sorted, because each comparison relies on order to rule out half the list.",
+      "weight": 3,
+      "hint": "Say why sorting is required, not only that it is.",
+      "mock_keywords": [
+        "sorted",
+        "order",
+        "ascending"
+      ]
+    },
+    {
+      "id": "kp2",
+      "statement": "Each step compares the target with the middle element of the current range.",
+      "weight": 3,
+      "hint": "Name the middle element as the thing being compared.",
+      "mock_keywords": [
+        "middle",
+        "mid",
+        "centre",
+        "center"
+      ]
+    },
+    {
+      "id": "kp3",
+      "statement": "The range shrinks by moving the low or high bound past the middle, discarding the half that cannot hold the target.",
+      "weight": 2,
+      "hint": "Describe how the low and high bounds move.",
+      "mock_keywords": [
+        "half",
+        "discard",
+        "low",
+        "high",
+        "left",
+        "right"
+      ]
+    },
+    {
+      "id": "kp4",
+      "statement": "The search stops when the target is found, or when the range is empty (low passes high) and it reports not found.",
+      "weight": 2,
+      "hint": "Explain both ways the search can end.",
+      "mock_keywords": [
+        "not found",
+        "-1",
+        "empty",
+        "nothing left",
+        "stops",
+        "ends",
+        "finds",
+        "until"
+      ]
+    },
+    {
+      "id": "kp5",
+      "statement": "It runs in O(log n) time because the range halves at every step.",
+      "weight": 2,
+      "hint": "Give the time complexity and the reason for it.",
+      "mock_keywords": [
+        "log",
+        "logarithmic",
+        "halves",
+        "halving"
+      ]
+    },
+    {
+      "id": "kp6",
+      "statement": "It is much faster than linear search on large lists, which checks every element.",
+      "weight": 1,
+      "hint": "Compare it with linear search.",
+      "mock_keywords": [
+        "linear",
+        "o(n)",
+        "every element",
+        "one by one"
+      ]
+    }
+  ],
+  "trap": {
+    "false_claim": "Binary search also works on an unsorted list, as long as the list is long enough.",
+    "truth": "Order is what lets one comparison rule out half the list. On an unsorted list, binary search can miss the target entirely."
+  },
+  "follow_ups": {
+    "probe": {
+      "kp1": "You said the list has to be sorted. What exactly goes wrong if it isn't?",
+      "kp2": "Which element does binary search compare the target with first, and why that one?",
+      "kp3": "After comparing with the middle, how do low and high change? Walk me through one step.",
+      "kp4": "How does the search know it should stop when the value isn't in the list?",
+      "kp5": "How many steps does binary search need for a list of about a million items?",
+      "kp6": "When would you still choose linear search over binary search?"
+    },
+    "what_if": "What happens if the value you are looking for appears several times in the list?"
+  }
+}

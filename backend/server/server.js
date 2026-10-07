@@ -1,19 +1,29 @@
 import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
+import { createApp } from './app.js';
+import { Store } from './store.js';
+import { createEngine } from '../ai/index.js';
 
-const app = express();
 const PORT = process.env.PORT ?? 8000;
+const engine = createEngine();
+const store = new Store(process.env.DATA_DIR || null);
+const app = createApp({ engine, store });
 
-app.use(cors());
-app.use(express.json());
-
-// ── Routes ────────────────────────────────────────────────────────────────────
-app.get('/health', (_req, res) => {
-  res.json({ ok: true });
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`VivDuck listening on http://0.0.0.0:${PORT}`);
+  console.log(
+    {
+      gemini: `AI: Gemini (${engine.model})`,
+      offline: 'AI: offline keyword grader (OFFLINE_GRADER=true)',
+      not_configured: 'AI: NOT CONFIGURED. Set LLM_API_KEY; grading returns 503 until then.',
+    }[engine.mode],
+  );
+  console.log(`Data: ${store.file ?? 'in memory only (set DATA_DIR to keep it)'}`);
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on http://0.0.0.0:${PORT}`);
-});
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    store.flush();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
+  });
+}

@@ -150,7 +150,7 @@ class BloomLadder extends StatelessWidget {
                       child: Text(
                         '${i + 1}',
                         style: TextStyle(
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: on
                               ? VD.teal
                               : context.inkSoft.withValues(alpha: 0.5),
@@ -162,7 +162,7 @@ class BloomLadder extends StatelessWidget {
                         bloomLevels[i],
                         style: TextStyle(
                           fontWeight: current
-                              ? FontWeight.w900
+                              ? FontWeight.w700
                               : FontWeight.w700,
                           color: on
                               ? context.ink

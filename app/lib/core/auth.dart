@@ -23,7 +23,15 @@ class AppUser {
     required this.role,
   });
 
-  String get firstName => name.trim().split(' ').first;
+  /// How to greet the user: their first name, or the whole name when it
+  /// starts with a title ("Ms. Rivera", not "Ms.").
+  String get firstName {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    return parts.first.endsWith('.') && parts.length > 1
+        ? parts.take(2).join(' ')
+        : parts.first;
+  }
+
   bool get isTeacher => role == UserRole.teacher;
 
   factory AppUser.fromJson(Map<String, dynamic> j) => AppUser(
@@ -59,6 +67,7 @@ abstract class AuthBackend {
     required String email,
     required String password,
     required UserRole role,
+    String? inviteCode,
   });
 }
 
@@ -102,12 +111,14 @@ class Auth extends ValueNotifier<AppUser?> {
     required String email,
     required String password,
     required UserRole role,
+    String? inviteCode,
   }) async => _save(
     await _backend.register(
       name: name.trim(),
       email: email.trim().toLowerCase(),
       password: password,
       role: role,
+      inviteCode: inviteCode?.trim(),
     ),
   );
 
@@ -184,11 +195,13 @@ class HttpAuthBackend implements AuthBackend {
     required String email,
     required String password,
     required UserRole role,
+    String? inviteCode,
   }) => _post('/auth/register', {
     'name': name,
     'email': email,
     'password': password,
     'role': role.name,
+    if (inviteCode != null && inviteCode.isNotEmpty) 'invite_code': inviteCode,
   });
 }
 
@@ -236,6 +249,7 @@ class MockAuthBackend implements AuthBackend {
     required String email,
     required String password,
     required UserRole role,
+    String? inviteCode,
   }) async {
     await Future.delayed(const Duration(milliseconds: 900));
     final accounts = await _load();

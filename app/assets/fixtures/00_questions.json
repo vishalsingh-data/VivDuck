@@ -1,0 +1,18 @@
+{
+  "title": "List Questions",
+  "method": "GET",
+  "path": "/questions",
+  "notes": "The preset questions a student can answer. Rubrics stay on the server (shared/rubrics/); only the question is sent.",
+  "response": {
+    "questions": [
+      {
+        "id": "binary_search",
+        "title": "Binary search",
+        "subject": "Algorithms",
+        "prompt": "Explain how binary search finds a value in a list. Say why the list must be sorted, how the search range changes at each step, when the search stops, and how fast it is.",
+        "marks": 10,
+        "points": 6
+      }
+    ]
+  }
+}

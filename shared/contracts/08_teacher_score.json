@@ -1,0 +1,23 @@
+{
+  "title": "Record the Teacher's Score",
+  "method": "POST",
+  "path": "/sessions/{session_id}/teacher_score",
+  "notes": "The teacher's own mark for the written answer, out of 100. It is compared with VivDuck's rubric score (score_before). Saving a score clears the session from the review queue. Returns the updated class agreement.",
+  "request": {
+    "score": 70,
+    "note": "Fair grade. The overflow point deserved partial credit."
+  },
+  "response": {
+    "session_id": "s_k3f9",
+    "teacher_score": 70,
+    "agreement": {
+      "sample_size": 11,
+      "mean_abs_diff": 5.4,
+      "within_10_pct": 91
+    }
+  },
+  "errors": [
+    { "status": 400, "meaning": "Score missing or not between 0 and 100", "body": { "error": "Score must be a whole number from 0 to 100." } },
+    { "status": 404, "meaning": "Unknown session", "body": { "error": "session not found" } }
+  ]
+}
