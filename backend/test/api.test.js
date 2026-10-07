@@ -100,6 +100,9 @@ test('register, duplicate email and wrong password', async () => {
 test('model labels go through the evidence check and double grading', async () => {
   let gradingCalls = 0;
   const llm = async ({ prompt }) => {
+    if (prompt.includes('deliberately FALSE')) {
+      return { points: [], trap_caught: false, trap_explanation: 'The student agreed with the claim.', bloom_reached: 'Apply' };
+    }
     if (prompt.includes('For EVERY rubric point')) {
       gradingCalls++;
       const strict = gradingCalls % 2 === 0;
@@ -112,9 +115,6 @@ test('model labels go through the evidence check and double grading', async () =
           { id: 'kp4', status: strict ? 'missing' : 'partial', evidence_quote: strict ? '' : 'It keeps halving until it finds the value or there is nothing left', comment: '' },
         ],
       };
-    }
-    if (prompt.includes('deliberately FALSE')) {
-      return { trap_caught: false, trap_explanation: 'The student agreed with the claim.', bloom_reached: 'Apply' };
     }
     return { question: 'Why does order matter here?' };
   };

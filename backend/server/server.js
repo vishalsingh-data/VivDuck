@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import { createApp } from './app.js';
 import { Store } from './store.js';
 import { createEngine } from '../ai/index.js';

@@ -11,7 +11,7 @@ services:
       - key: TEACHER_INVITE_CODE
         sync: false
       - key: LLM_MODEL
-        value: gemini-flash-latest
+        value: gemini-flash-lite-latest
     # The free plan has no disk, so sessions reset on each deploy or restart.
     # On a paid plan, uncomment to keep them:
     # disk:

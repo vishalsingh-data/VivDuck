@@ -65,7 +65,8 @@ docker run -p 8000:8000 -e LLM_API_KEY=your-key -v vivduck-data:/data vivduck
 |----------|---------|-|
 | `LLM_API_KEY` | (empty) | Gemini API key. Required for grading. `GEMINI_API_KEY` also works. |
 | `TEACHER_INVITE_CODE` | (empty) | When set, registering as a teacher needs this code. Students never do. Empty means anyone can register as a teacher. |
-| `LLM_MODEL` | `gemini-flash-latest` | Any Gemini model with structured output. |
+| `LLM_MODEL` | `gemini-flash-lite-latest` | Any Gemini model with structured output. The lite model has the most free-tier headroom. |
+| `LLM_FALLBACK_MODELS` | `gemini-3.5-flash-lite,gemini-flash-latest` | Tried in turn when a model is busy (503) or out of quota (429). |
 | `DATA_DIR` | `/data` in Docker | Where accounts and sessions are saved. Empty means memory only. |
 | `PUBLIC_DIR` | `/srv/public` in Docker | The Flutter web build to serve at `/`. |
 | `SEED_SAMPLES` | `false` | `true` adds 14 made-up sample sessions to the dashboard. |

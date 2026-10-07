@@ -41,7 +41,7 @@ const LabelSchema = z.object({
 
 const QuestionSchema = z.object({ question: z.string().min(5).max(400) });
 
-const JudgeSchema = z.object({
+const FinalSchema = LabelSchema.extend({
   trap_caught: z.boolean(),
   trap_explanation: z.string(),
   bloom_reached: z.enum(BLOOM_LEVELS),
@@ -169,28 +169,24 @@ Example of the style: "${fallback}"`,
   async function finalise(rubric, { answer, replies, grade }) {
     const texts = [answer, ...replies];
     const trapReply = replies[2] ?? '';
-    const [labels, judge] = await Promise.all([
-      labelRun(rubric, texts, { temperature: 0.1, strict: false }),
-      llm
-        ? llm({
-            system: EXAMINER,
-            prompt: `Question: ${rubric.prompt}
+    // One call: re-label every point with the follow-ups as extra evidence,
+    // and judge the trap and Bloom level.
+    const judge = llm
+      ? await llm({
+          system: EXAMINER,
+          prompt: `${labelPrompt(rubric, texts)}
 
-The student was shown this deliberately FALSE claim and asked whether they agree:
+ALSO judge the viva. The last follow-up answer is the student's reply to this deliberately FALSE claim, which they were asked whether they agree with:
 "${rubric.trap.false_claim}"
 The truth: ${rubric.trap.truth}
-
-${studentBlock(texts)}
-
-The last follow-up answer is their reply to the false claim.
 - trap_caught: true only if they reject the claim (or clearly doubt it) AND give a reason that is at least roughly correct. Agreeing, hedging without a reason, or a wrong reason is false.
 - trap_explanation: one sentence in the third person ("The student ...") saying what they did with the claim.
 - bloom_reached: the highest Bloom's taxonomy level the student convincingly demonstrated across all answers (Remember, Understand, Apply, Analyse, Evaluate, Create). Catching the trap with a sound reason shows Analyse or above.`,
-            schema: JudgeSchema,
-            temperature: 0.1,
-          })
-        : null,
-    ]);
+          schema: FinalSchema,
+          temperature: 0.1,
+        })
+      : null;
+    const labels = judge ? judge.points : kw.labelPoints(rubric, texts);
     const after = verifyPoints(rubric, labels, texts).points;
     const points = mergeUp(grade.points, after);
     const trapCaught = judge ? judge.trap_caught : kw.caughtTrap(trapReply);
