@@ -207,3 +207,93 @@ test('teacher accounts need the invite code when one is set', async () => {
     await close();
   }
 });
+
+// A fake model that can draft rubrics, grade and judge.
+const DRAFT = {
+  answerable: true,
+  title: 'Photosynthesis',
+  subject: 'Biology',
+  points: [
+    { statement: 'Plants convert light energy into chemical energy.', weight: 3, hint: 'Say what energy changes.', probe: 'Where does the energy end up?' },
+    { statement: 'Chlorophyll in chloroplasts absorbs light.', weight: 2, hint: 'Name the pigment.', probe: 'What absorbs the light?' },
+    { statement: 'Carbon dioxide and water are used, and oxygen is released.', weight: 2, hint: 'Give inputs and outputs.', probe: 'What gas is released?' },
+  ],
+  trap_false_claim: 'Plants get most of their mass from the soil.',
+  trap_truth: 'Most of the mass comes from carbon dioxide in the air.',
+  what_if: 'What if the plant were kept in the dark?',
+};
+const draftingLlm = async ({ prompt }) => {
+  if (prompt.includes('Write a marking rubric')) {
+    return prompt.includes('hello there') ? { ...DRAFT, answerable: false } : DRAFT;
+  }
+  if (prompt.includes('deliberately FALSE')) {
+    return { points: [], trap_caught: true, trap_explanation: 'The student rejected it.', bloom_reached: 'Analyse' };
+  }
+  if (prompt.includes('For EVERY rubric point')) {
+    return { points: [{ id: 'kp1', status: 'solid', evidence_quote: 'Plants turn light into chemical energy', comment: 'Good.' }] };
+  }
+  return { question: 'Tell me more?' };
+};
+const PHOTO_ANSWER = 'Plants turn light into chemical energy that they store as sugar.';
+
+test('teachers draft, edit, publish and remove their own questions', async () => {
+  const { call, close } = await boot({ llm: draftingLlm, seed: { samples: false, demoAccounts: true } });
+  try {
+    const teacher = await login(call, 'teacher@vivduck.test');
+    const student = await login(call, 'student@vivduck.test');
+    const prompt = 'Explain how photosynthesis works and why it matters.';
+    assert.equal((await call('POST', '/questions/draft', { prompt }, student)).status, 403);
+    const d = await call('POST', '/questions/draft', { prompt, marks: 20 }, teacher);
+    assert.equal(d.status, 200);
+    assert.equal(d.body.draft.points.length, 3);
+    assert.equal(d.body.draft.marks, 20);
+    assert.equal((await call('POST', '/questions/draft', { prompt: 'hello there friend' }, teacher)).status, 422);
+
+    // The teacher drops a point and edits the trap before publishing.
+    const edited = { ...d.body.draft, points: d.body.draft.points.slice(0, 2), trap: { ...d.body.draft.trap, truth: 'Edited.' } };
+    const pub = await call('POST', '/questions', edited, teacher);
+    assert.equal(pub.status, 201);
+    const qid = pub.body.question.id;
+    assert.equal(pub.body.question.points, 2);
+
+    const list = (await call('GET', '/questions')).body.questions;
+    assert.equal(list[0].id, qid, 'teacher questions come first');
+    assert.equal(list[0].origin, 'teacher');
+    assert.equal(list.at(-1).origin, 'sample');
+
+    const s = await call('POST', '/sessions', { student_name: 'S', question_id: qid, answer_text: PHOTO_ANSWER }, student);
+    assert.equal(s.status, 201);
+    assert.equal(s.body.grade.points.length, 2);
+    assert.equal(s.body.grade.points[0].status, 'solid');
+    assert.ok(!s.body.grade.review.reasons.some((r) => r.code === 'ai_rubric'), 'teacher-approved rubric is not flagged');
+
+    assert.equal((await call('DELETE', `/questions/${qid}`, undefined, teacher)).status, 200);
+    assert.ok(!(await call('GET', '/questions')).body.questions.some((q) => q.id === qid));
+    // Old sessions on a removed question still have their rubric.
+    for (const text of ['a', 'b', 'no']) await call('POST', `/sessions/${s.body.session_id}/turn`, { text }, student);
+    assert.equal((await call('GET', `/sessions/${s.body.session_id}/report`, undefined, student)).body.title, 'Photosynthesis');
+  } finally {
+    await close();
+  }
+});
+
+test('students can answer their own question; the AI rubric is flagged for a teacher', async () => {
+  const { call, close } = await boot({ llm: draftingLlm, seed: { samples: false, demoAccounts: true } });
+  try {
+    const custom = { prompt: 'Explain how photosynthesis works.', subject: 'Biology' };
+    const r = await call('POST', '/sessions', { student_name: 'S', custom_question: custom, answer_text: PHOTO_ANSWER });
+    assert.equal(r.status, 201);
+    assert.equal(r.body.question_info.title, 'Photosynthesis');
+    assert.ok(r.body.grade.review.reasons.some((x) => x.code === 'ai_rubric'));
+    assert.ok(!(await call('GET', '/questions')).body.questions.some((q) => q.title === 'Photosynthesis'), 'not listed for others');
+
+    const notQ = await call('POST', '/sessions', { student_name: 'S', custom_question: { prompt: 'hello there friend' }, answer_text: 'hi' });
+    assert.equal(notQ.status, 422);
+    const both = await call('POST', '/sessions', { student_name: 'S', question_id: 'binary_search', custom_question: custom, answer_text: 'x' });
+    assert.equal(both.status, 400);
+    const neither = await call('POST', '/sessions', { student_name: 'S', answer_text: 'x' });
+    assert.equal(neither.status, 400);
+  } finally {
+    await close();
+  }
+});

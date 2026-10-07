@@ -8,7 +8,7 @@ import cors from 'cors';
 import { z } from 'zod';
 
 import { createEngine, AiError, AiNotConfigured } from '../ai/index.js';
-import { rubrics as defaultRubrics, questionOf } from '../ai/rubrics.js';
+import { rubrics as defaultRubrics, questionOf, rubricFromDraft } from '../ai/rubrics.js';
 import { agreement } from '../ai/scoring.js';
 import { Store } from './store.js';
 import {
@@ -36,14 +36,21 @@ const ERR = {
   inProgress: 'viva is still in progress',
   duck: 'The duck is having trouble thinking. Please try again.',
   photo: 'Please upload a JPEG or PNG photo under 5 MB.',
+  notAQuestion:
+    "That doesn't look like a question the duck can grade. Write a question that asks for an explanation in a few sentences or paragraphs.",
   noWriting: "We couldn't find any writing in that photo. Try again with the page filling the frame.",
 };
 
 // ── Request bodies ───────────────────────────────────────────────────────────
 
+const CustomQuestion = z.object({
+  prompt: z.string().trim().min(10).max(3000),
+  subject: z.string().trim().max(60).nullish(),
+});
 const CreateSession = z.object({
   student_name: z.string().trim().min(1).max(100),
-  question_id: z.string(),
+  question_id: z.string().nullish(),
+  custom_question: CustomQuestion.nullish(),
   answer_text: z.string().trim().min(1).max(12000),
   source: z.enum(['typed', 'photo']).default('typed'),
   pasted: z.boolean().default(false),
@@ -54,6 +61,32 @@ const CreateSession = z.object({
       edited: z.boolean().default(false),
     })
     .nullish(),
+});
+const DraftRequest = z.object({
+  prompt: z.string().trim().min(10).max(3000),
+  subject: z.string().trim().max(60).nullish(),
+  marks: z.number().int().min(1).max(100).default(10),
+  model_answer: z.string().trim().max(8000).nullish(),
+});
+/** The rubric as the teacher edits it; rubricFromDraft turns it into the stored shape. */
+const QuestionDraft = z.object({
+  title: z.string().trim().min(1).max(80),
+  subject: z.string().trim().max(60).default(''),
+  prompt: z.string().trim().min(10).max(3000),
+  marks: z.number().int().min(1).max(100).default(10),
+  points: z
+    .array(
+      z.object({
+        statement: z.string().trim().min(3).max(400),
+        weight: z.number().int().min(1).max(3),
+        hint: z.string().trim().max(300).default(''),
+        probe: z.string().trim().max(400).default(''),
+      }),
+    )
+    .min(2)
+    .max(10),
+  trap: z.object({ false_claim: z.string().trim().min(5).max(400), truth: z.string().trim().min(5).max(500) }),
+  what_if: z.string().trim().min(5).max(400),
 });
 const Turn = z.object({ text: z.string().trim().min(1).max(6000), pasted: z.boolean().default(false) });
 const Register = z.object({
@@ -137,6 +170,20 @@ export function createApp({
     return r.success ? r.data : null;
   };
 
+  /** A preset rubric, or one a teacher or student wrote (kept after deletion for old sessions). */
+  const rubricOf = (id) => (id ? (rubrics.get(id) ?? store.question(id)?.rubric ?? null) : null);
+
+  /** Questions students can pick: published teacher questions (newest first), then the presets. */
+  function questionList() {
+    const teacher = store
+      .questions()
+      .filter((q) => q.origin === 'teacher' && !q.archived)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map((q) => ({ ...questionOf(q.rubric), origin: 'teacher', author: q.author_name ?? null }));
+    const samples = [...rubrics.values()].map((r) => ({ ...questionOf(r), origin: 'sample', author: null }));
+    return [...teacher, ...samples];
+  }
+
   // In-flight work that must not run twice for one session.
   const busy = new Set();
   const finalising = new Map();
@@ -144,7 +191,7 @@ export function createApp({
   function finalise(s) {
     if (s.report) return Promise.resolve(s.report);
     if (!finalising.has(s.id)) {
-      const rubric = rubrics.get(s.question_id);
+      const rubric = rubricOf(s.question_id);
       const job = engine
         .finalise(rubric, { answer: s.answer_text, replies: s.replies.map((r) => r.text), grade: s.grade })
         .then((result) => {
@@ -159,7 +206,7 @@ export function createApp({
   }
 
   function reportOf(s) {
-    const rubric = rubrics.get(s.question_id);
+    const rubric = rubricOf(s.question_id);
     return {
       session_id: s.id,
       question_id: s.question_id,
@@ -189,7 +236,7 @@ export function createApp({
       session_id: s.id,
       student: s.student_name,
       question_id: s.question_id,
-      question_title: rubrics.get(s.question_id)?.title ?? s.question_id,
+      question_title: rubricOf(s.question_id)?.title ?? s.question_id,
       score_before: s.grade.score,
       score_after: s.report.score_after,
       bloom_reached: s.report.bloom_reached,
@@ -224,7 +271,44 @@ export function createApp({
   });
 
   app.get('/questions', (_req, res) => {
-    res.json({ questions: [...rubrics.values()].map(questionOf) });
+    res.json({ questions: questionList() });
+  });
+
+  app.post('/questions/draft', requireTeacher, aiLimit, async (req, res) => {
+    const b = parse(DraftRequest, req.body);
+    if (!b) return res.status(400).json({ error: ERR.invalid });
+    const draft = await engine.draftRubric({
+      prompt: b.prompt,
+      subject: b.subject ?? '',
+      marks: b.marks,
+      modelAnswer: b.model_answer ?? '',
+    });
+    if (!draft) return res.status(422).json({ error: ERR.notAQuestion });
+    res.json({ draft });
+  });
+
+  app.post('/questions', requireTeacher, (req, res) => {
+    const b = parse(QuestionDraft, req.body);
+    if (!b) return res.status(400).json({ error: ERR.invalid });
+    const id = newId('q', 4);
+    const q = store.putQuestion({
+      id,
+      origin: 'teacher',
+      author_id: req.user.id,
+      author_name: req.user.name,
+      archived: false,
+      created_at: new Date().toISOString(),
+      rubric: rubricFromDraft(id, b),
+    });
+    res.status(201).json({ question: { ...questionOf(q.rubric), origin: 'teacher', author: q.author_name } });
+  });
+
+  app.delete('/questions/:id', requireTeacher, (req, res) => {
+    const q = store.question(req.params.id);
+    if (!q || q.origin !== 'teacher' || q.archived) return res.status(404).json({ error: 'question not found' });
+    q.archived = true;
+    store.putQuestion(q);
+    res.json({ ok: true });
   });
 
   // ── Auth ───────────────────────────────────────────────────────────────────
@@ -272,7 +356,7 @@ export function createApp({
     const data = b.image_base64.replace(/^data:[^,]*,/, '');
     const bytes = Buffer.from(data, 'base64');
     if (bytes.length === 0 || bytes.length > MAX_PHOTO_BYTES) return res.status(400).json({ error: ERR.photo });
-    const result = await engine.transcribe(rubrics.get(b.question_id ?? '') ?? null, { data, mimeType: b.mime_type });
+    const result = await engine.transcribe(rubricOf(b.question_id), { data, mimeType: b.mime_type });
     if (!result) return res.status(422).json({ error: ERR.noWriting });
     res.json(result);
   });
@@ -281,11 +365,28 @@ export function createApp({
 
   app.post('/sessions', aiLimit, async (req, res) => {
     const b = parse(CreateSession, req.body);
-    const rubric = b && rubrics.get(b.question_id);
+    if (!b || !!b.question_id === !!b.custom_question) return res.status(400).json({ error: ERR.invalid });
+    let rubric = rubricOf(b.question_id);
+    if (b.custom_question) {
+      // The student's own question: draft a rubric for it, and keep it so the
+      // report and the teacher can see exactly what it was graded against.
+      const draft = await engine.draftRubric({ prompt: b.custom_question.prompt, subject: b.custom_question.subject ?? '' });
+      if (!draft) return res.status(422).json({ error: ERR.notAQuestion });
+      const id = newId('q', 4);
+      rubric = store.putQuestion({
+        id,
+        origin: 'student',
+        author_id: req.user?.id ?? null,
+        author_name: b.student_name,
+        created_at: new Date().toISOString(),
+        rubric: rubricFromDraft(id, draft),
+      }).rubric;
+    }
     if (!rubric) return res.status(400).json({ error: ERR.invalid });
     const grade = await engine.gradeAnswer(rubric, b.answer_text, {
       pasted: b.pasted,
       transcription: b.source === 'photo' ? b.transcription : null,
+      aiRubric: !!b.custom_question,
     });
     const question = await engine.probeQuestion(rubric, b.answer_text, grade);
     const s = store.putSession({
@@ -308,7 +409,7 @@ export function createApp({
       teacher_score: null,
       teacher_note: null,
     });
-    res.status(201).json({ session_id: s.id, grade, question, question_type: 'probe', round: 0 });
+    res.status(201).json({ session_id: s.id, grade, question, question_type: 'probe', round: 0, question_info: questionOf(rubric) });
   });
 
   app.post('/sessions/:id/turn', aiLimit, async (req, res) => {
@@ -320,7 +421,7 @@ export function createApp({
     if (busy.has(s.id)) return res.status(409).json({ error: 'The duck is still thinking about your last answer.' });
     busy.add(s.id);
     try {
-      const rubric = rubrics.get(s.question_id);
+      const rubric = rubricOf(s.question_id);
       const replies = [...s.replies, { text: b.text, pasted: b.pasted }];
       const round = replies.length;
       let next = null;

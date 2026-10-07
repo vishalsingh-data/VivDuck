@@ -2,7 +2,10 @@
 
 The AI examiner that grades your answer, then asks if you really understand it.
 
-- Grades a descriptive answer (typed or a photo of handwriting) against the teacher's rubric.
+- Works for any question, in any subject or language:
+  - **Teachers** type a question; Gemini drafts the rubric (key points, weights, a trap claim, follow-ups); the teacher edits it and publishes it (sidebar > Questions).
+  - **Students** can pick a teacher's question, a sample, or type their own. For their own question Gemini drafts the rubric, and the answer is flagged so a teacher can check it.
+- Grades a descriptive answer (typed or a photo of handwriting) against that rubric.
 - Every mark cites the student's own words. The quote is checked in code; a quote that isn't really in the answer earns nothing.
 - Grades twice and flags the answer for a teacher when the two runs disagree, the answer was pasted, or the handwriting was hard to read.
 - Runs a short viva: a probe on the weakest point, a what-if, and a deliberately false claim the student must catch.
@@ -18,7 +21,7 @@ The AI examiner that grades your answer, then asks if you really understand it.
 | `backend/server/` | Express API: every route in `shared/contracts/`, and serves the web build. |
 | `backend/ai/` | Gemini prompts and schemas (`index.js`), scoring rules (`scoring.js`), offline grader (`keyword.js`). |
 | `shared/contracts/` | API contracts (request, response, errors). |
-| `shared/rubrics/` | Question rubrics, with key points, weights, trap claim and follow-ups. |
+| `shared/rubrics/` | The three hand-checked sample rubrics. Teacher and student questions are stored with their rubric in `DATA_DIR`. |
 
 ## Run locally
 

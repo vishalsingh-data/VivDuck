@@ -11,6 +11,7 @@ import '../core/shell_scope.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../report_teacher/report_screen.dart';
+import '../report_teacher/questions_screen.dart';
 import '../report_teacher/teacher_screen.dart';
 import '../viva/continue_viva_card.dart';
 import '../viva/answer_form.dart';
@@ -82,6 +83,8 @@ class _AppShellState extends State<AppShell> {
               onNewViva: _newViva,
               onOpenReport: (id) => _open(ReportScreen(sessionId: id), id: id),
               onOpenClass: () => _open(const TeacherScreen(), id: '#class'),
+              onOpenQuestions: () =>
+                  _open(const QuestionsScreen(), id: '#questions'),
             ),
             Expanded(
               child: ClipRect(
@@ -104,7 +107,7 @@ class _Sidebar extends StatelessWidget {
   final AppUser user;
   final bool collapsed;
   final ValueNotifier<String?> selected;
-  final VoidCallback onToggle, onNewViva, onOpenClass;
+  final VoidCallback onToggle, onNewViva, onOpenClass, onOpenQuestions;
   final ValueChanged<String> onOpenReport;
 
   const _Sidebar({
@@ -115,6 +118,7 @@ class _Sidebar extends StatelessWidget {
     required this.onNewViva,
     required this.onOpenReport,
     required this.onOpenClass,
+    required this.onOpenQuestions,
   });
 
   @override
@@ -178,6 +182,17 @@ class _Sidebar extends StatelessWidget {
                         collapsed: collapsed,
                         selected: sel == '#class',
                         onTap: onOpenClass,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ValueListenableBuilder(
+                      valueListenable: selected,
+                      builder: (context, sel, _) => _NavItem(
+                        icon: Icons.quiz_outlined,
+                        label: 'Questions',
+                        collapsed: collapsed,
+                        selected: sel == '#questions',
+                        onTap: onOpenQuestions,
                       ),
                     ),
                   ],

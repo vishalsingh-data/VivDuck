@@ -1,6 +1,7 @@
 // Data models mirroring shared/contracts/*.json. Field names match the wire format.
 
-/// A preset question a student can answer (00_questions.json).
+/// A question a student can answer (00_questions.json): a teacher's, a
+/// sample, or the student's own ([Question.custom]).
 class Question {
   final String id;
   final String title;
@@ -9,6 +10,12 @@ class Question {
   final int marks;
   final int points;
 
+  /// teacher | sample | custom
+  final String origin;
+
+  /// Who set it, for teacher questions.
+  final String? author;
+
   const Question({
     required this.id,
     required this.title,
@@ -16,7 +23,24 @@ class Question {
     required this.prompt,
     required this.marks,
     required this.points,
+    this.origin = 'sample',
+    this.author,
   });
+
+  static const customId = 'custom';
+
+  /// The student's own question. The server drafts a rubric for it.
+  factory Question.custom(String prompt, {String subject = ''}) => Question(
+    id: customId,
+    title: 'Your own question',
+    subject: subject,
+    prompt: prompt.trim(),
+    marks: 10,
+    points: 0,
+    origin: 'custom',
+  );
+
+  bool get isCustom => id == customId;
 
   factory Question.fromJson(Map<String, dynamic> j) => Question(
     id: j['id'] as String,
@@ -25,6 +49,8 @@ class Question {
     prompt: j['prompt'] as String,
     marks: (j['marks'] as num?)?.toInt() ?? 10,
     points: (j['points'] as num?)?.toInt() ?? 0,
+    origin: j['origin'] as String? ?? 'sample',
+    author: j['author'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +60,84 @@ class Question {
     'prompt': prompt,
     'marks': marks,
     'points': points,
+    'origin': origin,
+    if (author != null) 'author': author,
+  };
+}
+
+/// One rubric point in the teacher's question editor (09_teacher_questions.json).
+class DraftPoint {
+  final String statement;
+  final int weight; // 1-3
+  final String hint;
+  final String probe;
+
+  const DraftPoint({
+    required this.statement,
+    required this.weight,
+    this.hint = '',
+    this.probe = '',
+  });
+
+  factory DraftPoint.fromJson(Map<String, dynamic> j) => DraftPoint(
+    statement: j['statement'] as String,
+    weight: ((j['weight'] as num?)?.toInt() ?? 2).clamp(1, 3),
+    hint: j['hint'] as String? ?? '',
+    probe: j['probe'] as String? ?? '',
+  );
+
+  Map<String, dynamic> toJson() => {
+    'statement': statement,
+    'weight': weight,
+    'hint': hint,
+    'probe': probe,
+  };
+}
+
+/// A question with its rubric, as a teacher edits it before publishing.
+class QuestionDraft {
+  final String title;
+  final String subject;
+  final String prompt;
+  final int marks;
+  final List<DraftPoint> points;
+  final String trapClaim;
+  final String trapTruth;
+  final String whatIf;
+
+  const QuestionDraft({
+    required this.title,
+    required this.subject,
+    required this.prompt,
+    required this.marks,
+    required this.points,
+    required this.trapClaim,
+    required this.trapTruth,
+    required this.whatIf,
+  });
+
+  factory QuestionDraft.fromJson(Map<String, dynamic> j) => QuestionDraft(
+    title: j['title'] as String? ?? '',
+    subject: j['subject'] as String? ?? '',
+    prompt: j['prompt'] as String,
+    marks: (j['marks'] as num?)?.toInt() ?? 10,
+    points: [
+      for (final p in j['points'] as List)
+        DraftPoint.fromJson(p as Map<String, dynamic>),
+    ],
+    trapClaim: (j['trap'] as Map)['false_claim'] as String,
+    trapTruth: (j['trap'] as Map)['truth'] as String,
+    whatIf: j['what_if'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    'subject': subject,
+    'prompt': prompt,
+    'marks': marks,
+    'points': [for (final p in points) p.toJson()],
+    'trap': {'false_claim': trapClaim, 'truth': trapTruth},
+    'what_if': whatIf,
   };
 }
 
@@ -84,9 +188,26 @@ class CreateSessionRequest {
 
   String get title => question.title;
 
+  /// The same answer, with the question the server says it graded.
+  CreateSessionRequest withQuestion(Question q) => CreateSessionRequest(
+    studentName: studentName,
+    question: q,
+    answerText: answerText,
+    source: source,
+    pasted: pasted,
+    transcription: transcription,
+    transcriptionEdited: transcriptionEdited,
+  );
+
   Map<String, dynamic> toJson() => {
     'student_name': studentName,
-    'question_id': question.id,
+    if (question.isCustom)
+      'custom_question': {
+        'prompt': question.prompt,
+        'subject': question.subject,
+      }
+    else
+      'question_id': question.id,
     'answer_text': answerText,
     'source': source,
     'pasted': pasted,
@@ -245,11 +366,15 @@ class CreateSessionResponse {
   final String question;
   final String questionType;
 
+  /// The question that was graded (its drafted title, for a custom question).
+  final Question? questionInfo;
+
   const CreateSessionResponse({
     required this.sessionId,
     required this.grade,
     required this.question,
     required this.questionType,
+    this.questionInfo,
   });
 
   factory CreateSessionResponse.fromJson(Map<String, dynamic> j) =>
@@ -258,6 +383,9 @@ class CreateSessionResponse {
         grade: Grade.fromJson(j['grade'] as Map<String, dynamic>),
         question: j['question'] as String,
         questionType: j['question_type'] as String? ?? 'probe',
+        questionInfo: j['question_info'] == null
+            ? null
+            : Question.fromJson(j['question_info'] as Map<String, dynamic>),
       );
 }
 

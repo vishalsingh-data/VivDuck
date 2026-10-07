@@ -8,8 +8,9 @@ import '../core/models.dart';
 import '../core/theme.dart';
 import 'session_controller.dart';
 
-/// Pick a preset question, answer it by typing or with a photo of a
-/// handwritten page, and hand the finished request to [onSubmit].
+/// Pick a question (a teacher's, a sample, or the student's own), answer it by
+/// typing or with a photo of a handwritten page, and hand the finished
+/// request to [onSubmit].
 class AnswerForm extends StatefulWidget {
   /// The signed-in student's name; when null the form asks for it.
   final String? studentName;
@@ -26,12 +27,16 @@ class AnswerForm extends StatefulWidget {
 enum _Mode { typed, photo }
 
 class _AnswerFormState extends State<AnswerForm> {
-  late final Future<List<Question>> _questions = VivaApi.instance
-      .getQuestions();
+  late Future<List<Question>> _questions = VivaApi.instance.getQuestions();
   final _name = TextEditingController();
   final _answer = TextEditingController();
   final _transcript = TextEditingController();
+  final _customPrompt = TextEditingController();
+  final _customSubject = TextEditingController();
   Question? _question;
+
+  /// The student is writing their own question instead of picking one.
+  bool _custom = false;
   _Mode _mode = _Mode.typed;
   bool _pasted = false;
   int _lastLength = 0;
@@ -44,9 +49,13 @@ class _AnswerFormState extends State<AnswerForm> {
   bool _busy = false;
   String? _error;
 
+  void _reloadQuestions() =>
+      setState(() => _questions = VivaApi.instance.getQuestions());
+
   @override
   void initState() {
     super.initState();
+    questionsChanged.addListener(_reloadQuestions);
     _answer.addListener(() {
       final len = _answer.text.length;
       if (looksPasted(_lastLength, len)) _pasted = true;
@@ -56,15 +65,30 @@ class _AnswerFormState extends State<AnswerForm> {
     });
     _transcript.addListener(() => setState(() {}));
     _name.addListener(() => setState(() {}));
+    _customPrompt.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
+    questionsChanged.removeListener(_reloadQuestions);
     _name.dispose();
     _answer.dispose();
     _transcript.dispose();
+    _customPrompt.dispose();
+    _customSubject.dispose();
     super.dispose();
   }
+
+  /// The question being answered: the picked one, or the student's own once
+  /// it is long enough to grade.
+  Question? get _selected => _custom
+      ? (_customPrompt.text.trim().length >= 10
+            ? Question.custom(
+                _customPrompt.text,
+                subject: _customSubject.text.trim(),
+              )
+            : null)
+      : _question;
 
   String get _studentName => widget.studentName ?? _name.text.trim();
 
@@ -74,13 +98,13 @@ class _AnswerFormState extends State<AnswerForm> {
   bool get _ready =>
       !_busy &&
       !_reading &&
-      _question != null &&
+      _selected != null &&
       _studentName.isNotEmpty &&
       _text.isNotEmpty &&
       (_mode == _Mode.typed || _transcription != null);
 
   Future<void> _pick(ImageSource source) async {
-    final q = _question;
+    final q = _selected;
     if (q == null) return;
     final XFile? file;
     try {
@@ -127,7 +151,7 @@ class _AnswerFormState extends State<AnswerForm> {
     final t = _transcription;
     final req = CreateSessionRequest(
       studentName: _studentName,
-      question: _question!,
+      question: _selected!,
       answerText: _text,
       source: _mode == _Mode.typed ? 'typed' : 'photo',
       pasted: _mode == _Mode.typed && _pasted,
@@ -179,15 +203,24 @@ class _AnswerFormState extends State<AnswerForm> {
             const SizedBox(height: 12),
             _QuestionPicker(
               questions: questions,
-              selected: _question,
+              selected: _custom ? null : _question,
+              custom: _custom,
               onSelect: (q) => setState(() {
                 _question = q;
+                _custom = false;
+                _error = null;
+              }),
+              onCustom: () => setState(() {
+                _custom = true;
                 _error = null;
               }),
             ),
-            if (_question != null) ...[
+            if (_question != null || _custom) ...[
               const SizedBox(height: 16),
-              _Prompt(question: _question!),
+              if (_custom)
+                _CustomQuestion(prompt: _customPrompt, subject: _customSubject)
+              else
+                _Prompt(question: _question!),
               const SizedBox(height: 28),
               const _Step(n: 2, label: 'Your answer'),
               const SizedBox(height: 12),
@@ -254,7 +287,9 @@ class _AnswerFormState extends State<AnswerForm> {
                       : const Icon(Icons.fact_check_outlined),
                   label: Text(
                     _busy
-                        ? 'Grading against the rubric…'
+                        ? (_custom
+                              ? 'Writing a rubric, then grading…'
+                              : 'Grading against the rubric…')
                         : _mode == _Mode.photo
                         ? 'Confirm text and grade'
                         : 'Grade my answer',
@@ -333,11 +368,15 @@ class _Step extends StatelessWidget {
 class _QuestionPicker extends StatelessWidget {
   final List<Question> questions;
   final Question? selected;
+  final bool custom;
   final ValueChanged<Question> onSelect;
+  final VoidCallback onCustom;
   const _QuestionPicker({
     required this.questions,
     required this.selected,
+    required this.custom,
     required this.onSelect,
+    required this.onCustom,
   });
 
   @override
@@ -349,30 +388,30 @@ class _QuestionPicker extends StatelessWidget {
           selected: selected?.id == q.id,
           onTap: () => onSelect(q),
         ),
+      _QuestionCard(
+        question: const Question(
+          id: Question.customId,
+          title: 'Your own question',
+          subject: 'Any subject',
+          prompt: '',
+          marks: 10,
+          points: 0,
+          origin: 'custom',
+        ),
+        selected: custom,
+        onTap: onCustom,
+      ),
     ];
+    // A grid that grows with the number of questions: 1 column on phones,
+    // up to 3 on wide screens.
     return LayoutBuilder(
       builder: (context, c) {
-        if (c.maxWidth < 560) {
-          return Column(
-            children: [
-              for (final card in cards)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: card,
-                ),
-            ],
-          );
-        }
-        return IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < cards.length; i++) ...[
-                if (i > 0) const SizedBox(width: 12),
-                Expanded(child: cards[i]),
-              ],
-            ],
-          ),
+        final cols = c.maxWidth < 560 ? 1 : (c.maxWidth < 860 ? 2 : 3);
+        final w = (c.maxWidth - (cols - 1) * 12) / cols;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [for (final card in cards) SizedBox(width: w, child: card)],
         );
       },
     );
@@ -395,7 +434,9 @@ class _QuestionCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '${q.title}, ${q.subject}, ${q.marks} marks',
+      label: q.isCustom
+          ? 'Your own question, any subject'
+          : '${q.title}, ${q.subject}, ${q.marks} marks',
       child: Material(
         color: context.surface,
         borderRadius: BorderRadius.circular(VD.radius),
@@ -418,9 +459,18 @@ class _QuestionCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
+                      if (q.isCustom) ...[
+                        Icon(
+                          Icons.edit_note_rounded,
+                          size: 16,
+                          color: context.inkSoft,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                       Expanded(
                         child: Text(
-                          q.subject.toUpperCase(),
+                          (q.subject.isEmpty ? 'General' : q.subject)
+                              .toUpperCase(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -441,10 +491,19 @@ class _QuestionCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(q.title, style: context.text.titleMedium),
+                  Text(
+                    q.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.titleMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text(
-                    '${q.marks} marks · ${q.points} rubric points',
+                    q.isCustom
+                        ? 'Type any question. The duck writes a rubric for it.'
+                        : q.origin == 'teacher'
+                        ? 'Set by ${q.author ?? 'your teacher'} · ${q.marks} marks'
+                        : '${q.marks} marks · ${q.points} rubric points',
                     style: TextStyle(color: context.inkSoft, fontSize: 13),
                   ),
                 ],
@@ -453,6 +512,65 @@ class _QuestionCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CustomQuestion extends StatelessWidget {
+  final TextEditingController prompt, subject;
+  const _CustomQuestion({required this.prompt, required this.subject});
+
+  @override
+  Widget build(BuildContext context) {
+    final short =
+        prompt.text.trim().isNotEmpty && prompt.text.trim().length < 10;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          label: 'Your question',
+          child: TextField(
+            controller: prompt,
+            minLines: 2,
+            maxLines: 6,
+            maxLength: 3000,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText:
+                  'Type or paste the question, e.g. "Explain how photosynthesis works and why it matters."',
+              counterText: '',
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Semantics(
+          label: 'Subject (optional)',
+          child: TextField(
+            controller: subject,
+            maxLength: 60,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              hintText: 'Subject (optional), e.g. Biology',
+              counterText: '',
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(Icons.info_outline_rounded, size: 15, color: context.inkSoft),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                short
+                    ? 'Write the full question (at least 10 characters).'
+                    : 'Works for any subject or language. The duck drafts a rubric for your question, and your teacher can check it.',
+                style: TextStyle(color: context.inkSoft, fontSize: 12.5),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

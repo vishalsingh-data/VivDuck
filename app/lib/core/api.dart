@@ -3,7 +3,12 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
+    show
+        TargetPlatform,
+        ValueNotifier,
+        defaultTargetPlatform,
+        kIsWeb,
+        kReleaseMode;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
@@ -32,6 +37,10 @@ String _defaultServer() {
   }
   return 'http://localhost:8000';
 }
+
+/// Bumped whenever a teacher publishes or removes a question, so open
+/// question lists reload.
+final questionsChanged = ValueNotifier<int>(0);
 
 /// Follow-up questions after the written answer: probe, what-if, trap.
 const followUpCount = 3;
@@ -64,6 +73,20 @@ abstract class VivaApi {
     int score, {
     String? note,
   });
+
+  /// Teacher only: drafts a rubric for any question with AI.
+  Future<QuestionDraft> draftQuestion({
+    required String prompt,
+    String subject = '',
+    int marks = 10,
+    String modelAnswer = '',
+  });
+
+  /// Teacher only: publishes an edited draft so students can pick it.
+  Future<Question> publishQuestion(QuestionDraft draft);
+
+  /// Teacher only: hides a published question from students.
+  Future<void> deleteQuestion(String id);
 
   bool get isMock;
 
@@ -119,6 +142,38 @@ class HttpVivaApi implements VivaApi {
 
   Future<Map<String, dynamic>> _get(String path) =>
       _send(() => _client.get(_u(path), headers: _json));
+
+  @override
+  Future<QuestionDraft> draftQuestion({
+    required String prompt,
+    String subject = '',
+    int marks = 10,
+    String modelAnswer = '',
+  }) async => QuestionDraft.fromJson(
+    (await _post('/questions/draft', {
+          'prompt': prompt,
+          if (subject.isNotEmpty) 'subject': subject,
+          'marks': marks,
+          if (modelAnswer.isNotEmpty) 'model_answer': modelAnswer,
+        }))['draft']
+        as Map<String, dynamic>,
+  );
+
+  @override
+  Future<Question> publishQuestion(QuestionDraft draft) async {
+    final q = Question.fromJson(
+      (await _post('/questions', draft.toJson()))['question']
+          as Map<String, dynamic>,
+    );
+    questionsChanged.value++;
+    return q;
+  }
+
+  @override
+  Future<void> deleteQuestion(String id) async {
+    await _send(() => _client.delete(_u('/questions/$id'), headers: _json));
+    questionsChanged.value++;
+  }
 
   @override
   Future<List<Question>> getQuestions() async => [
@@ -216,6 +271,26 @@ class MockVivaApi implements VivaApi {
     return [for (final id in questionIds) r[id]!.question];
   }
 
+  static const _needsServer = ApiException(
+    'Writing your own questions needs the VivDuck server.',
+    status: 503,
+  );
+
+  @override
+  Future<QuestionDraft> draftQuestion({
+    required String prompt,
+    String subject = '',
+    int marks = 10,
+    String modelAnswer = '',
+  }) async => throw _needsServer;
+
+  @override
+  Future<Question> publishQuestion(QuestionDraft draft) async =>
+      throw _needsServer;
+
+  @override
+  Future<void> deleteQuestion(String id) async => throw _needsServer;
+
   @override
   Future<Transcription> transcribe(
     String questionId,
@@ -240,6 +315,7 @@ class MockVivaApi implements VivaApi {
 
   @override
   Future<CreateSessionResponse> createSession(CreateSessionRequest req) async {
+    if (req.question.isCustom) throw _needsServer;
     final rubrics = await _loadRubrics();
     final rubric = rubrics[req.question.id];
     if (req.studentName.trim().isEmpty ||

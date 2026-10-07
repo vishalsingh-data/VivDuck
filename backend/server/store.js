@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const EMPTY = () => ({ users: [], tokens: {}, sessions: {} });
+const EMPTY = () => ({ users: [], tokens: {}, sessions: {}, questions: {} });
 
 export class Store {
   constructor(dir = null) {
@@ -57,6 +57,19 @@ export class Store {
   addToken(token, userId) {
     this.data.tokens[token] = userId;
     this.save();
+  }
+
+  // Questions written by teachers or students (rubric + who/when)
+  question(id) {
+    return this.data.questions[id] ?? null;
+  }
+  putQuestion(q) {
+    this.data.questions[q.id] = q;
+    this.save();
+    return q;
+  }
+  questions() {
+    return Object.values(this.data.questions);
   }
 
   // Sessions

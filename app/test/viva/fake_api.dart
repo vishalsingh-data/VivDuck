@@ -129,6 +129,21 @@ class FakeApi implements VivaApi {
   Future<Report> getReport(String sessionId) => throw UnimplementedError();
 
   @override
+  Future<QuestionDraft> draftQuestion({
+    required String prompt,
+    String subject = '',
+    int marks = 10,
+    String modelAnswer = '',
+  }) => throw UnimplementedError();
+
+  @override
+  Future<Question> publishQuestion(QuestionDraft draft) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> deleteQuestion(String id) => throw UnimplementedError();
+
+  @override
   Future<TeacherSummary> getTeacherSummary() => throw UnimplementedError();
 
   @override

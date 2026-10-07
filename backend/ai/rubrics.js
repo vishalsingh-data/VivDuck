@@ -32,3 +32,31 @@ export function questionOf(r) {
     points: r.points.length,
   };
 }
+
+/**
+ * Editor shape (what the teacher edits) to stored rubric shape (what the
+ * grader reads, same as shared/rubrics/). Point ids are assigned here.
+ */
+export function rubricFromDraft(id, d) {
+  const points = d.points.map((p, i) => ({
+    id: `kp${i + 1}`,
+    statement: p.statement.trim(),
+    weight: p.weight,
+    hint: (p.hint ?? '').trim(),
+  }));
+  return {
+    id,
+    title: d.title.trim(),
+    subject: (d.subject ?? '').trim(),
+    prompt: d.prompt.trim(),
+    marks: d.marks ?? 10,
+    points,
+    trap: { false_claim: d.trap.false_claim.trim(), truth: d.trap.truth.trim() },
+    follow_ups: {
+      probe: Object.fromEntries(
+        d.points.map((p, i) => [`kp${i + 1}`, (p.probe ?? '').trim()]).filter(([, q]) => q),
+      ),
+      what_if: d.what_if.trim(),
+    },
+  };
+}

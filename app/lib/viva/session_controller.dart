@@ -87,9 +87,14 @@ class SessionController extends ChangeNotifier {
     try {
       final res = await _api.createSession(req);
       loading = false;
+      final info = res.questionInfo;
       await attach(
         res.sessionId,
-        req,
+        req.question.isCustom && info != null
+            ? req.withQuestion(
+                Question.fromJson({...info.toJson(), 'origin': 'custom'}),
+              )
+            : req,
         res.grade,
         res.question,
         res.questionType,
@@ -125,8 +130,15 @@ class SessionController extends ChangeNotifier {
   }
 
   static String _opening(CreateSessionRequest req) {
-    final first = req.studentName.trim().split(' ').first;
-    return "Hi $first. I've marked your answer on ${req.title.toLowerCase()} "
+    // "Ms. Rivera" stays whole; "Alice Nguyen" becomes "Alice".
+    final parts = req.studentName.trim().split(RegExp(r'\s+'));
+    final first = parts.first.endsWith('.') && parts.length > 1
+        ? parts.take(2).join(' ')
+        : parts.first;
+    final topic = req.question.isCustom
+        ? 'your question'
+        : req.title.toLowerCase();
+    return "Hi $first. I've marked your answer on $topic "
         'against the rubric. Three short questions now, to check you '
         'understand what you wrote. Your score can go up as you answer.';
   }

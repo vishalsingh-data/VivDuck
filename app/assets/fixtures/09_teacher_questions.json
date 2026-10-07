@@ -1,0 +1,86 @@
+{
+  "title": "Teacher Questions",
+  "notes": "Teacher-only (Authorization: Bearer <teacher token>). Draft a rubric for any question with AI, edit it, then publish it so students can pick it. The editor shape below is what draft returns and publish accepts; the server assigns point ids.",
+  "draft": {
+    "method": "POST",
+    "path": "/questions/draft",
+    "request": {
+      "prompt": "Explain how photosynthesis works and why it matters.",
+      "subject": "Biology",
+      "marks": 10,
+      "model_answer": "(optional) A model answer to base the points on."
+    },
+    "response": {
+      "draft": {
+        "title": "Photosynthesis",
+        "subject": "Biology",
+        "prompt": "Explain how photosynthesis works and why it matters.",
+        "marks": 10,
+        "points": [
+          {
+            "statement": "Plants convert light energy into chemical energy stored in glucose.",
+            "weight": 3,
+            "hint": "Say what kind of energy changes into what.",
+            "probe": "Where does the energy from sunlight end up?"
+          }
+        ],
+        "trap": {
+          "false_claim": "Plants get most of their mass from the soil.",
+          "truth": "Most of a plant's mass comes from carbon dioxide taken from the air."
+        },
+        "what_if": "What would happen to a plant kept in complete darkness for a week?"
+      }
+    },
+    "errors": [
+      {
+        "status": 422,
+        "meaning": "Not a question that can be graded",
+        "body": {
+          "error": "That doesn't look like a question the duck can grade. ..."
+        }
+      },
+      {
+        "status": 502,
+        "meaning": "Upstream AI service unavailable",
+        "body": {
+          "error": "The duck is having trouble thinking. Please try again."
+        }
+      }
+    ]
+  },
+  "publish": {
+    "method": "POST",
+    "path": "/questions",
+    "request": "(the draft object, edited; 2-10 points, weight 1-3)",
+    "response": {
+      "question": {
+        "id": "q_9f2a01c3",
+        "title": "Photosynthesis",
+        "subject": "Biology",
+        "prompt": "Explain how photosynthesis works and why it matters.",
+        "marks": 10,
+        "points": 4,
+        "origin": "teacher",
+        "author": "Ms. Rivera"
+      }
+    }
+  },
+  "remove": {
+    "method": "DELETE",
+    "path": "/questions/{question_id}",
+    "response": {
+      "ok": true
+    },
+    "notes": "Hides it from students. Sessions already graded against it keep their rubric."
+  },
+  "errors": [
+    {
+      "status": 401,
+      "meaning": "Not signed in"
+    },
+    {
+      "status": 403,
+      "meaning": "Not a teacher account"
+    }
+  ]
+}

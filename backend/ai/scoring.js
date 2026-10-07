@@ -13,6 +13,7 @@ export const REVIEW_MESSAGES = {
   runs_differ: 'The two grading runs differ by more than 10 points.',
   pasted: 'The answer was pasted.',
   handwriting: 'The handwriting was hard to read.',
+  ai_rubric: "The student asked their own question, so the rubric was drafted by AI and hasn't been checked by a teacher.",
 };
 
 // ── Evidence check ───────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ export function mergeUp(before, after) {
 
 // ── Review flags ─────────────────────────────────────────────────────────────
 
-export function reviewOf({ runs, evidenceFailed = 0, pasted = false, transcription = null }) {
+export function reviewOf({ runs, evidenceFailed = 0, pasted = false, transcription = null, aiRubric = false }) {
   const reasons = [];
   if (evidenceFailed > 0) {
     reasons.push({
@@ -127,6 +128,7 @@ export function reviewOf({ runs, evidenceFailed = 0, pasted = false, transcripti
   if (transcription && transcription.legibility === 'unclear') {
     reasons.push({ code: 'handwriting', message: REVIEW_MESSAGES.handwriting });
   }
+  if (aiRubric) reasons.push({ code: 'ai_rubric', message: REVIEW_MESSAGES.ai_rubric });
   return { needs_review: reasons.length > 0, reasons };
 }
 
