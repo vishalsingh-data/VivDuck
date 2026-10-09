@@ -555,7 +555,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                               n: 3,
                               title: 'Follow-up questions',
                               subtitle:
-                                  'After grading, the duck asks about the weakest point, then the what-if, then states the false claim and asks if the student agrees.',
+                                  'After grading, the duck asks about the weakest point, then a what-if, then a false claim the student must catch. The duck writes a fresh false claim for each student from their answers, and checks it is really false; the one below is the backup, used only if that fails.',
                               children: [
                                 _field(
                                   _whatIf,
@@ -565,7 +565,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                                 ),
                                 _field(
                                   _trapClaim,
-                                  label: 'False claim (the trap)',
+                                  label: 'Backup false claim (the trap)',
                                   hint:
                                       'Must be clearly false. A student who understands should reject it.',
                                   lines: 2,

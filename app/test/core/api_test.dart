@@ -113,6 +113,27 @@ void main() {
       expect(t.unclear, isTrue);
       expect(t.text, contains('[?]'));
     });
+
+    test('answer sheets (10)', () {
+      final c = _contract('10_answer_sheets');
+      final read = [
+        for (final a in c['read']['response']['answers'] as List)
+          SheetAnswer.fromJson(a as Map<String, dynamic>),
+      ];
+      expect(read.first.found, isTrue);
+      expect(read.first.transcription.unclear, isTrue);
+      expect(read.last.found, isFalse);
+      final sheet = AnswerSheet.fromJson(c['grade']['response']);
+      expect(sheet.items, hasLength(2));
+      expect(sheet.items.first.grade.points.first.evidenceQuote, isNotNull);
+      expect(formatMarks(sheet.totalMarks), '6');
+      expect(formatMarks(6.5), '6.5');
+      final row = AnswerSheet.fromJson(
+        (c['list']['response']['sheets'] as List).first,
+      );
+      expect(row.items, isEmpty);
+      expect(row.maxMarks, 20);
+    });
   });
 
   group('MockGrader', () {
@@ -263,6 +284,58 @@ void main() {
       expect(
         () => api.submitTurn('nope', 'hi', pasted: false),
         throwsA(isA<ApiException>().having((e) => e.status, 'status', 404)),
+      );
+    });
+
+    test('an answer sheet is read, then graded question by question', () async {
+      final api = MockVivaApi();
+      final pdf = UploadPage(Uint8List(10), 'application/pdf', 'sheet.pdf');
+      final read = await api.readSheet(
+        ['binary_search', 'normalisation'],
+        [pdf],
+      );
+      expect(read.map((a) => a.questionId), ['binary_search', 'normalisation']);
+      expect(read.every((a) => a.found), isTrue);
+
+      final sheet = await api.gradeSheet('Riya', [
+        (
+          questionId: 'binary_search',
+          text: read[0].transcription.text,
+          transcription: read[0].transcription,
+          edited: false,
+        ),
+        (
+          questionId: 'normalisation',
+          text: '',
+          transcription: null,
+          edited: false,
+        ),
+      ]);
+      expect(sheet.items, hasLength(2));
+      expect(sheet.answered, 1);
+      expect(sheet.items[0].marks, greaterThan(0));
+      expect(sheet.items[1].marks, 0);
+      expect(sheet.totalMarks, sheet.items[0].marks);
+      expect(sheet.needsReview, isTrue, reason: 'handwriting was unclear');
+      expect((await api.getSheets()).single.sheetId, sheet.sheetId);
+    });
+
+    test('documents keep to the page limits', () async {
+      final api = MockVivaApi();
+      final page = UploadPage(Uint8List(10), 'image/jpeg', 'p.jpg');
+      expect(
+        (await api.transcribeDocument('binary_search', [page, page])).text,
+        isNotEmpty,
+      );
+      expect(
+        () => api.transcribeDocument('binary_search', List.filled(11, page)),
+        throwsA(isA<ApiException>()),
+      );
+      expect(
+        () => api.transcribeDocument('binary_search', [
+          UploadPage(Uint8List(maxPhotoBytes + 1), 'image/jpeg', 'big.jpg'),
+        ]),
+        throwsA(isA<ApiException>()),
       );
     });
   });

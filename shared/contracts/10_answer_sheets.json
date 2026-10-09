@@ -1,0 +1,280 @@
+{
+  "title": "Grade a Whole Answer Sheet",
+  "notes": "Teacher only (401 signed out, 403 for students). Two steps. 1) POST /teacher/sheets/read with the questions on the exam (1 to 10 question ids, no repeats) and the scanned sheet (same page limits as contract 07). The model finds each question's answer on the sheet, by the numbers the student wrote or by topic, and transcribes it word for word; answers come back one per question, in the order asked. 2) The teacher checks and corrects the text, then POST /teacher/sheets grades each answer against its rubric exactly like a typed answer (two runs, verified quotes; the viva is not run). An empty text means no answer: every point is missing and it scores 0. marks = score/100 x max_marks, to the nearest half mark. GET /teacher/sheets lists graded sheets newest first; GET /teacher/sheets/:id returns one.",
+  "read": {
+    "method": "POST",
+    "path": "/teacher/sheets/read",
+    "request": {
+      "question_ids": [
+        "binary_search",
+        "normalisation"
+      ],
+      "pages": [
+        {
+          "image_base64": "<base64 PDF of the whole sheet>",
+          "mime_type": "application/pdf"
+        }
+      ]
+    },
+    "response": {
+      "answers": [
+        {
+          "question_id": "binary_search",
+          "found": true,
+          "text": "Binary search needs the list to be sorted first. It checks the middle element and compares it with the [?] we want.",
+          "legibility": "unclear",
+          "confidence": 0.74,
+          "unclear_words": 1
+        },
+        {
+          "question_id": "normalisation",
+          "found": false,
+          "text": "",
+          "legibility": "clear",
+          "confidence": 1,
+          "unclear_words": 0
+        }
+      ]
+    }
+  },
+  "grade": {
+    "method": "POST",
+    "path": "/teacher/sheets",
+    "request": {
+      "student_name": "Riya Sharma",
+      "answers": [
+        {
+          "question_id": "binary_search",
+          "text": "Binary search needs the list to be sorted first. It checks the middle element and compares it with the [?] we want.",
+          "transcription": {
+            "legibility": "unclear",
+            "confidence": 0.74,
+            "edited": false
+          }
+        },
+        {
+          "question_id": "normalisation",
+          "text": ""
+        }
+      ]
+    },
+    "response": {
+      "sheet_id": "sh_3fa2",
+      "student": "Riya Sharma",
+      "graded_by": "Ms Teacher",
+      "total_marks": 6,
+      "max_marks": 20,
+      "questions": 2,
+      "answered": 1,
+      "needs_review": true,
+      "created_at": "2026-10-09T10:30:00.000Z",
+      "items": [
+        {
+          "question_id": "binary_search",
+          "title": "Binary search",
+          "prompt": "Explain how binary search finds a value in a list, and what it needs to work.",
+          "answered": true,
+          "answer_text": "Binary search needs the list to be sorted first. It checks the middle element and compares it with the [?] we want.",
+          "transcription": {
+            "legibility": "unclear",
+            "confidence": 0.74,
+            "edited": false
+          },
+          "score": 58,
+          "marks": 6,
+          "max_marks": 10,
+          "grade": {
+            "score": 58,
+            "runs": [
+              58,
+              58
+            ],
+            "points": [
+              {
+                "id": "kp1",
+                "statement": "The list must be sorted.",
+                "weight": 3,
+                "status": "solid",
+                "comment": "Covered clearly.",
+                "evidence_quote": "Binary search needs the list to be sorted first"
+              }
+            ],
+            "review": {
+              "needs_review": true,
+              "reasons": [
+                {
+                  "code": "handwriting",
+                  "message": "The handwriting was hard to read."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "question_id": "normalisation",
+          "title": "Database normalisation",
+          "prompt": "Explain what normalisation is and why databases use it.",
+          "answered": false,
+          "answer_text": "",
+          "transcription": null,
+          "score": 0,
+          "marks": 0,
+          "max_marks": 10,
+          "grade": {
+            "score": 0,
+            "runs": [
+              0,
+              0
+            ],
+            "points": [
+              {
+                "id": "kp1",
+                "statement": "Normalisation organises tables to reduce redundancy.",
+                "weight": 3,
+                "status": "missing",
+                "comment": "No answer to this question was found on the sheet.",
+                "evidence_quote": null
+              }
+            ],
+            "review": {
+              "needs_review": false,
+              "reasons": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  "list": {
+    "method": "GET",
+    "path": "/teacher/sheets",
+    "response": {
+      "sheets": [
+        {
+          "sheet_id": "sh_3fa2",
+          "student": "Riya Sharma",
+          "graded_by": "Ms Teacher",
+          "total_marks": 6,
+          "max_marks": 20,
+          "questions": 2,
+          "answered": 1,
+          "needs_review": true,
+          "created_at": "2026-10-09T10:30:00.000Z"
+        }
+      ]
+    }
+  },
+  "get": {
+    "method": "GET",
+    "path": "/teacher/sheets/:id",
+    "response": {
+      "sheet_id": "sh_3fa2",
+      "student": "Riya Sharma",
+      "graded_by": "Ms Teacher",
+      "total_marks": 6,
+      "max_marks": 20,
+      "questions": 2,
+      "answered": 1,
+      "needs_review": true,
+      "created_at": "2026-10-09T10:30:00.000Z",
+      "items": [
+        {
+          "question_id": "binary_search",
+          "title": "Binary search",
+          "prompt": "Explain how binary search finds a value in a list, and what it needs to work.",
+          "answered": true,
+          "answer_text": "Binary search needs the list to be sorted first. It checks the middle element and compares it with the [?] we want.",
+          "transcription": {
+            "legibility": "unclear",
+            "confidence": 0.74,
+            "edited": false
+          },
+          "score": 58,
+          "marks": 6,
+          "max_marks": 10,
+          "grade": {
+            "score": 58,
+            "runs": [
+              58,
+              58
+            ],
+            "points": [
+              {
+                "id": "kp1",
+                "statement": "The list must be sorted.",
+                "weight": 3,
+                "status": "solid",
+                "comment": "Covered clearly.",
+                "evidence_quote": "Binary search needs the list to be sorted first"
+              }
+            ],
+            "review": {
+              "needs_review": true,
+              "reasons": [
+                {
+                  "code": "handwriting",
+                  "message": "The handwriting was hard to read."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "question_id": "normalisation",
+          "title": "Database normalisation",
+          "prompt": "Explain what normalisation is and why databases use it.",
+          "answered": false,
+          "answer_text": "",
+          "transcription": null,
+          "score": 0,
+          "marks": 0,
+          "max_marks": 10,
+          "grade": {
+            "score": 0,
+            "runs": [
+              0,
+              0
+            ],
+            "points": [
+              {
+                "id": "kp1",
+                "statement": "Normalisation organises tables to reduce redundancy.",
+                "weight": 3,
+                "status": "missing",
+                "comment": "No answer to this question was found on the sheet.",
+                "evidence_quote": null
+              }
+            ],
+            "review": {
+              "needs_review": false,
+              "reasons": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "meaning": "Unknown or repeated question, or bad pages",
+      "body": {
+        "error": "Please upload up to 10 JPEG or PNG pages (5 MB each) or a PDF (10 MB), under 15 MB in all."
+      }
+    },
+    {
+      "status": 422,
+      "meaning": "None of the questions was found on the sheet",
+      "body": {
+        "error": "We couldn't find answers to any of the chosen questions on that sheet. Check the questions and the pages, then try again."
+      }
+    },
+    {
+      "status": 502,
+      "meaning": "Upstream AI service unavailable",
+      "body": {
+        "error": "The duck is having trouble thinking. Please try again."
+      }
+    }
+  ]
+}

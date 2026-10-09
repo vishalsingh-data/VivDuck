@@ -5,12 +5,13 @@ import 'package:image_picker/image_picker.dart';
 
 import '../core/api.dart';
 import '../core/models.dart';
+import '../core/page_picker.dart';
 import '../core/theme.dart';
 import 'session_controller.dart';
 
 /// Pick a question (a teacher's, a sample, or the student's own), answer it by
-/// typing or with a photo of a handwritten page, and hand the finished
-/// request to [onSubmit].
+/// typing, with a photo of a handwritten page, or with a scanned document
+/// (several pages or a PDF), and hand the finished request to [onSubmit].
 class AnswerForm extends StatefulWidget {
   /// The signed-in student's name; when null the form asks for it.
   final String? studentName;
@@ -24,7 +25,8 @@ class AnswerForm extends StatefulWidget {
   State<AnswerForm> createState() => _AnswerFormState();
 }
 
-enum _Mode { typed, photo }
+/// Named as the request's source (contract 01).
+enum _Mode { typed, photo, document }
 
 class _AnswerFormState extends State<AnswerForm> {
   late Future<List<Question>> _questions = VivaApi.instance.getQuestions();
@@ -41,8 +43,9 @@ class _AnswerFormState extends State<AnswerForm> {
   bool _pasted = false;
   int _lastLength = 0;
 
-  // Photo flow.
+  // Photo and document flows: the upload, then the text read from it.
   Uint8List? _photo;
+  List<UploadPage> _pages = const [];
   Transcription? _transcription;
   bool _reading = false;
 
@@ -146,6 +149,31 @@ class _AnswerFormState extends State<AnswerForm> {
     }
   }
 
+  Future<void> _readDocument() async {
+    final q = _selected;
+    if (q == null || _pages.isEmpty) return;
+    setState(() {
+      _transcription = null;
+      _reading = true;
+      _error = null;
+    });
+    try {
+      final t = await VivaApi.instance.transcribeDocument(q.id, _pages);
+      if (!mounted) return;
+      _transcript.text = t.text;
+      setState(() {
+        _transcription = t;
+        _reading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _reading = false;
+        _error = e.message;
+      });
+    }
+  }
+
   Future<void> _submit() async {
     if (!_ready) return;
     final t = _transcription;
@@ -153,11 +181,11 @@ class _AnswerFormState extends State<AnswerForm> {
       studentName: _studentName,
       question: _selected!,
       answerText: _text,
-      source: _mode == _Mode.typed ? 'typed' : 'photo',
+      source: _mode.name,
       pasted: _mode == _Mode.typed && _pasted,
-      transcription: _mode == _Mode.photo ? t : null,
+      transcription: _mode == _Mode.typed ? null : t,
       transcriptionEdited:
-          _mode == _Mode.photo &&
+          _mode != _Mode.typed &&
           t != null &&
           _transcript.text.trim() != t.text.trim(),
     );
@@ -247,13 +275,26 @@ class _AnswerFormState extends State<AnswerForm> {
                     ),
                     ButtonSegment(
                       value: _Mode.photo,
-                      label: Text('Photo of handwriting'),
+                      label: Text('Photo'),
                       icon: Icon(Icons.photo_camera_outlined),
+                    ),
+                    ButtonSegment(
+                      value: _Mode.document,
+                      label: Text('Document'),
+                      icon: Icon(Icons.description_outlined),
                     ),
                   ],
                   selected: {_mode},
                   showSelectedIcon: false,
                   onSelectionChanged: (s) => setState(() {
+                    // The text read from a photo or a document belongs to
+                    // that upload, so switching starts the upload over.
+                    if (_mode != _Mode.typed && s.first != _mode) {
+                      _photo = null;
+                      _pages = const [];
+                      _transcription = null;
+                      _transcript.clear();
+                    }
                     _mode = s.first;
                     _error = null;
                   }),
@@ -262,6 +303,22 @@ class _AnswerFormState extends State<AnswerForm> {
               const SizedBox(height: 12),
               if (_mode == _Mode.typed)
                 _TypedAnswer(controller: _answer, pasted: _pasted)
+              else if (_mode == _Mode.document)
+                _DocumentAnswer(
+                  pages: _pages,
+                  reading: _reading,
+                  transcription: _transcription,
+                  controller: _transcript,
+                  onPages: (p) => setState(() {
+                    _pages = p;
+                    _error = null;
+                  }),
+                  onRead: _readDocument,
+                  onRescan: () => setState(() {
+                    _transcription = null;
+                    _transcript.clear();
+                  }),
+                )
               else
                 _PhotoAnswer(
                   photo: _photo,
@@ -290,7 +347,7 @@ class _AnswerFormState extends State<AnswerForm> {
                         ? (_custom
                               ? 'Writing a rubric, then grading…'
                               : 'Grading against the rubric…')
-                        : _mode == _Mode.photo
+                        : _mode != _Mode.typed
                         ? 'Confirm text and grade'
                         : 'Grade my answer',
                   ),
@@ -709,7 +766,7 @@ class _PhotoAnswer extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'One page, flat and well lit. You will check the text before it is graded.',
+              'One page, flat and well lit. You will check the text before it is graded. More than one page? Choose Document.',
               textAlign: TextAlign.center,
               style: TextStyle(color: context.inkSoft, fontSize: 13.5),
             ),
@@ -741,7 +798,6 @@ class _PhotoAnswer extends StatelessWidget {
       child: Image.memory(photo!, width: 120, height: 150, fit: BoxFit.cover),
     );
     final t = transcription;
-    final unresolved = controller.text.contains('[?]');
     final body = reading || t == null
         ? Row(
             children: [
@@ -758,62 +814,11 @@ class _PhotoAnswer extends StatelessWidget {
               ),
             ],
           )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    t.unclear
-                        ? Icons.info_outline_rounded
-                        : Icons.check_circle_outline_rounded,
-                    size: 18,
-                    color: t.unclear ? VD.partial : VD.solid,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      t.unclear
-                          ? 'Check the text against your page. Words marked [?] could not be read; type what you wrote.'
-                          : 'Check the text matches your page, then grade it.',
-                      style: TextStyle(color: context.inkSoft, fontSize: 13.5),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Semantics(
-                label: 'Transcribed answer',
-                child: TextField(
-                  controller: controller,
-                  minLines: 6,
-                  maxLines: 16,
-                  decoration: const InputDecoration(),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  if (unresolved)
-                    Expanded(
-                      child: Text(
-                        'Still has [?]. It will be graded as written.',
-                        style: const TextStyle(
-                          color: VD.partial,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    )
-                  else
-                    const Spacer(),
-                  TextButton.icon(
-                    onPressed: onRetake,
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: const Text('Use a different photo'),
-                  ),
-                ],
-              ),
-            ],
+        : TranscriptEditor(
+            transcription: t,
+            controller: controller,
+            onRedo: onRetake,
+            redoLabel: 'Use a different photo',
           );
 
     return LayoutBuilder(
@@ -830,6 +835,158 @@ class _PhotoAnswer extends StatelessWidget {
                 Expanded(child: body),
               ],
             ),
+    );
+  }
+}
+
+class _DocumentAnswer extends StatelessWidget {
+  final List<UploadPage> pages;
+  final bool reading;
+  final Transcription? transcription;
+  final TextEditingController controller;
+  final ValueChanged<List<UploadPage>> onPages;
+  final VoidCallback onRead, onRescan;
+
+  const _DocumentAnswer({
+    required this.pages,
+    required this.reading,
+    required this.transcription,
+    required this.controller,
+    required this.onPages,
+    required this.onRead,
+    required this.onRescan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = transcription;
+    if (t != null) {
+      return TranscriptEditor(
+        transcription: t,
+        controller: controller,
+        onRedo: onRescan,
+        redoLabel: 'Change the pages',
+        note:
+            'Read from ${pages.length} ${pages.length == 1 ? 'file' : 'files'}.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PagePicker(
+          pages: pages,
+          onChanged: onPages,
+          enabled: !reading,
+          what: 'your handwritten answer',
+        ),
+        if (pages.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.tonalIcon(
+              onPressed: reading ? null : onRead,
+              icon: reading
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    )
+                  : const Icon(Icons.text_snippet_outlined),
+              label: Text(
+                reading
+                    ? 'Reading your handwriting…'
+                    : 'Read ${pages.length == 1 ? 'this file' : 'these ${pages.length} files'}',
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'You will check the text before it is graded.',
+            style: TextStyle(color: context.inkSoft, fontSize: 13),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The text read from a photo or document, for the writer to check and
+/// correct before it is graded. Words the model could not read are [?].
+class TranscriptEditor extends StatelessWidget {
+  final Transcription transcription;
+  final TextEditingController controller;
+  final VoidCallback onRedo;
+  final String redoLabel;
+  final String? note;
+
+  const TranscriptEditor({
+    super.key,
+    required this.transcription,
+    required this.controller,
+    required this.onRedo,
+    required this.redoLabel,
+    this.note,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = transcription;
+    final unresolved = controller.text.contains('[?]');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(
+              t.unclear
+                  ? Icons.info_outline_rounded
+                  : Icons.check_circle_outline_rounded,
+              size: 18,
+              color: t.unclear ? VD.partial : VD.solid,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                [
+                  ?note,
+                  t.unclear
+                      ? 'Check the text against your page. Words marked [?] could not be read; type what you wrote.'
+                      : 'Check the text matches your page, then grade it.',
+                ].join(' '),
+                style: TextStyle(color: context.inkSoft, fontSize: 13.5),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Semantics(
+          label: 'Transcribed answer',
+          child: TextField(
+            controller: controller,
+            minLines: 6,
+            maxLines: 16,
+            decoration: const InputDecoration(),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            if (unresolved)
+              const Expanded(
+                child: Text(
+                  'Still has [?]. It will be graded as written.',
+                  style: TextStyle(color: VD.partial, fontSize: 12.5),
+                ),
+              )
+            else
+              const Spacer(),
+            TextButton.icon(
+              onPressed: onRedo,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(redoLabel),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

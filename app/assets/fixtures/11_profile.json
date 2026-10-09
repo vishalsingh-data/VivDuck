@@ -1,0 +1,26 @@
+{
+  "title": "Profile",
+  "notes": "Signed in only (Authorization: Bearer <token>; 401 otherwise). A user can read their account, change their name, and change their password. Changing the password signs out every other device; the one that changed it stays signed in. The shared demo accounts can't be changed (403), so one judge can't lock out the others.",
+  "me": {
+    "method": "GET",
+    "path": "/auth/me",
+    "response": { "user": { "id": "u_3fa2c1", "name": "Riya Sharma", "email": "riya@school.in", "role": "student" } }
+  },
+  "update": {
+    "method": "PATCH",
+    "path": "/auth/me",
+    "request": { "name": "Riya Sharma" },
+    "response": { "user": { "id": "u_3fa2c1", "name": "Riya Sharma", "email": "riya@school.in", "role": "student" } }
+  },
+  "password": {
+    "method": "POST",
+    "path": "/auth/password",
+    "request": { "current_password": "first-pass", "new_password": "at-least-8-chars" },
+    "response": { "ok": true }
+  },
+  "errors": [
+    { "status": 400, "meaning": "Empty name, or a new password under 8 characters", "body": { "error": "The new password needs at least 8 characters." } },
+    { "status": 401, "meaning": "Signed out, or the current password is wrong", "body": { "error": "Your current password isn't right." } },
+    { "status": 403, "meaning": "A shared demo account", "body": { "error": "Demo accounts are shared, so their name and password can't be changed." } }
+  ]
+}

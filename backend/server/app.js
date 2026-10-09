@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 import { createEngine, AiError, AiNotConfigured } from '../ai/index.js';
 import { rubrics as defaultRubrics, questionOf, rubricFromDraft } from '../ai/rubrics.js';
-import { agreement } from '../ai/scoring.js';
+import { agreement, marksOf, verifyPoints } from '../ai/scoring.js';
 import { Store } from './store.js';
 import {
   attachUser,
@@ -29,6 +29,13 @@ const DEFAULT_PUBLIC_DIR = path.resolve(here, '../../app/build/web');
 
 const FOLLOW_UPS = 3;
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+/** One upload (photos or PDFs) for one answer or one answer sheet. */
+const MAX_PAGES = 10;
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+/** Questions on one answer sheet. */
+const MAX_SHEET_QUESTIONS = 10;
+const UPLOAD_PATHS = new Set(['/transcribe', '/teacher/sheets/read']);
 
 const ERR = {
   invalid: 'request body is invalid',
@@ -36,13 +43,20 @@ const ERR = {
   inProgress: 'viva is still in progress',
   duck: 'The duck is having trouble thinking. Please try again.',
   photo: 'Please upload a JPEG or PNG photo under 5 MB.',
+  document: 'Please upload up to 10 JPEG or PNG pages (5 MB each) or a PDF (10 MB), under 15 MB in all.',
   notAQuestion:
     "That doesn't look like a question the duck can grade. Write a question that asks for an explanation in a few sentences or paragraphs.",
   noWriting: "We couldn't find any writing in that photo. Try again with the page filling the frame.",
+  noAnswers: "We couldn't find answers to any of the chosen questions on that sheet. Check the questions and the pages, then try again.",
 };
 
 // ── Request bodies ───────────────────────────────────────────────────────────
 
+const TranscriptionInfo = z.object({
+  legibility: z.enum(['clear', 'unclear']),
+  confidence: z.number().min(0).max(1),
+  edited: z.boolean().default(false),
+});
 const CustomQuestion = z.object({
   prompt: z.string().trim().min(10).max(3000),
   subject: z.string().trim().max(60).nullish(),
@@ -52,15 +66,9 @@ const CreateSession = z.object({
   question_id: z.string().nullish(),
   custom_question: CustomQuestion.nullish(),
   answer_text: z.string().trim().min(1).max(12000),
-  source: z.enum(['typed', 'photo']).default('typed'),
+  source: z.enum(['typed', 'photo', 'document']).default('typed'),
   pasted: z.boolean().default(false),
-  transcription: z
-    .object({
-      legibility: z.enum(['clear', 'unclear']),
-      confidence: z.number().min(0).max(1),
-      edited: z.boolean().default(false),
-    })
-    .nullish(),
+  transcription: TranscriptionInfo.nullish(),
 });
 const DraftRequest = z.object({
   prompt: z.string().trim().min(10).max(3000),
@@ -97,14 +105,39 @@ const Register = z.object({
   invite_code: z.string().trim().max(200).nullish(),
 });
 const Login = z.object({ email: z.string().trim().min(1), password: z.string().min(1) });
+const ProfileUpdate = z.object({ name: z.string().trim().min(1).max(100) });
+const PasswordChange = z.object({ current_password: z.string().min(1), new_password: z.string().min(8).max(200) });
 const TeacherScore = z.object({
   score: z.number().int().min(0).max(100),
   note: z.string().max(2000).nullish(),
 });
+const Upload = z.object({
+  image_base64: z.string().min(1),
+  mime_type: z.enum(['image/jpeg', 'image/png', 'application/pdf']),
+});
+/** One photo (image_base64 + mime_type), or several pages / a PDF (pages). */
 const Transcribe = z.object({
   question_id: z.string().nullish(),
-  image_base64: z.string().min(1),
-  mime_type: z.enum(['image/jpeg', 'image/png']),
+  image_base64: z.string().min(1).nullish(),
+  mime_type: z.enum(['image/jpeg', 'image/png']).nullish(),
+  pages: z.array(Upload).min(1).max(MAX_PAGES).nullish(),
+});
+const SheetRead = z.object({
+  question_ids: z.array(z.string()).min(1).max(MAX_SHEET_QUESTIONS),
+  pages: z.array(Upload).min(1).max(MAX_PAGES),
+});
+const SheetGrade = z.object({
+  student_name: z.string().trim().min(1).max(100),
+  answers: z
+    .array(
+      z.object({
+        question_id: z.string(),
+        text: z.string().trim().max(12000).default(''),
+        transcription: TranscriptionInfo.nullish(),
+      }),
+    )
+    .min(1)
+    .max(MAX_SHEET_QUESTIONS),
 });
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -124,6 +157,24 @@ function rateLimit({ perMinute }) {
     if (++h.n > perMinute) return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
     next();
   };
+}
+
+/**
+ * Decodes uploaded pages for the model, or null when one is empty, too big,
+ * or they are too big together.
+ */
+function filesOf(pages) {
+  let total = 0;
+  const files = [];
+  for (const p of pages) {
+    const data = p.image_base64.replace(/^data:[^,]*,/, '');
+    const n = Buffer.from(data, 'base64').length;
+    const max = p.mime_type === 'application/pdf' ? MAX_PDF_BYTES : MAX_PHOTO_BYTES;
+    if (n === 0 || n > max) return null;
+    total += n;
+    files.push({ data, mimeType: p.mime_type });
+  }
+  return total <= MAX_UPLOAD_BYTES ? files : null;
 }
 
 function seedSamples(store) {
@@ -161,7 +212,7 @@ export function createApp({
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(cors());
-  app.use(express.json({ limit: '8mb' }));
+  app.use(express.json({ limit: '25mb' }));
   app.use(attachUser(store));
   const aiLimit = rateLimit({ perMinute: limits.aiPerMinute });
 
@@ -193,7 +244,8 @@ export function createApp({
     if (!finalising.has(s.id)) {
       const rubric = rubricOf(s.question_id);
       const job = engine
-        .finalise(rubric, { answer: s.answer_text, replies: s.replies.map((r) => r.text), grade: s.grade })
+        // Older sessions have no trap of their own: they were asked the rubric's.
+        .finalise(rubric, { answer: s.answer_text, replies: s.replies.map((r) => r.text), grade: s.grade, trap: s.trap ?? rubric.trap })
         .then((result) => {
           s.report = result;
           store.putSession(s);
@@ -348,15 +400,60 @@ export function createApp({
     res.json({ token, user: publicUser(user) });
   });
 
+  // ── Profile (contract 11) ──────────────────────────────────────────────────
+
+  const DEMO_IDS = new Set(DEMO_ACCOUNTS.map((a) => a.id));
+  /** Demo logins are shared with judges, so nobody can lock the others out. */
+  function editableUser(req, res) {
+    if (!req.user) {
+      res.status(401).json({ error: 'Please sign in first.' });
+      return null;
+    }
+    if (DEMO_IDS.has(req.user.id)) {
+      res.status(403).json({ error: "Demo accounts are shared, so their name and password can't be changed." });
+      return null;
+    }
+    return req.user;
+  }
+
+  app.get('/auth/me', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Please sign in first.' });
+    res.json({ user: publicUser(req.user) });
+  });
+
+  app.patch('/auth/me', (req, res) => {
+    const b = parse(ProfileUpdate, req.body);
+    if (!b) return res.status(400).json({ error: 'Please enter your name.' });
+    const user = editableUser(req, res);
+    if (!user) return;
+    user.name = b.name;
+    store.save();
+    res.json({ user: publicUser(user) });
+  });
+
+  app.post('/auth/password', (req, res) => {
+    const b = parse(PasswordChange, req.body);
+    if (!b) return res.status(400).json({ error: 'The new password needs at least 8 characters.' });
+    const user = editableUser(req, res);
+    if (!user) return;
+    if (!checkPassword(b.current_password, user.password)) {
+      return res.status(401).json({ error: "Your current password isn't right." });
+    }
+    user.password = hashPassword(b.new_password);
+    // Other devices signed in with the old password are signed out.
+    const token = /^Bearer\s+(.+)$/i.exec(req.get('authorization') ?? '')[1].trim();
+    store.dropTokens(user.id, token);
+    res.json({ ok: true });
+  });
+
   // ── Transcription ──────────────────────────────────────────────────────────
 
   app.post('/transcribe', aiLimit, async (req, res) => {
     const b = parse(Transcribe, req.body);
-    if (!b) return res.status(400).json({ error: ERR.photo });
-    const data = b.image_base64.replace(/^data:[^,]*,/, '');
-    const bytes = Buffer.from(data, 'base64');
-    if (bytes.length === 0 || bytes.length > MAX_PHOTO_BYTES) return res.status(400).json({ error: ERR.photo });
-    const result = await engine.transcribe(rubricOf(b.question_id), { data, mimeType: b.mime_type });
+    const pages = b?.pages ?? (b?.image_base64 && b.mime_type ? [{ image_base64: b.image_base64, mime_type: b.mime_type }] : null);
+    const files = pages && filesOf(pages);
+    if (!files) return res.status(400).json({ error: b?.pages || req.body?.pages ? ERR.document : ERR.photo });
+    const result = await engine.transcribe(rubricOf(b.question_id), files);
     if (!result) return res.status(422).json({ error: ERR.noWriting });
     res.json(result);
   });
@@ -385,7 +482,7 @@ export function createApp({
     if (!rubric) return res.status(400).json({ error: ERR.invalid });
     const grade = await engine.gradeAnswer(rubric, b.answer_text, {
       pasted: b.pasted,
-      transcription: b.source === 'photo' ? b.transcription : null,
+      transcription: b.source === 'typed' ? null : b.transcription,
       aiRubric: !!b.custom_question,
     });
     const question = await engine.probeQuestion(rubric, b.answer_text, grade);
@@ -426,7 +523,11 @@ export function createApp({
       const round = replies.length;
       let next = null;
       if (round === 1) next = { type: 'what_if', text: await engine.whatIfQuestion(rubric, [s.answer_text, b.text]) };
-      if (round === 2) next = { type: 'trap', text: engine.trapQuestion(rubric) };
+      if (round === 2) {
+        const trap = await engine.trapQuestion(rubric, [s.answer_text, ...replies.map((r) => r.text)]);
+        s.trap = { false_claim: trap.false_claim, truth: trap.truth, source: trap.source };
+        next = { type: 'trap', text: trap.text };
+      }
       s.replies = replies;
       if (b.pasted) s.paste_flags += 1;
       if (next) s.questions.push(next);
@@ -477,6 +578,98 @@ export function createApp({
     res.json({ session_id: s.id, teacher_score: b.score, agreement: agreement(classRows()) });
   });
 
+  // ── Answer sheets (contract 10) ────────────────────────────────────────────
+
+  /** The rubrics for [ids], or null when one is unknown or repeated. */
+  function sheetRubrics(ids) {
+    if (new Set(ids).size !== ids.length) return null;
+    const list = ids.map(rubricOf);
+    return list.every(Boolean) ? list : null;
+  }
+
+  function sheetSummary(sh) {
+    return {
+      sheet_id: sh.id,
+      student: sh.student_name,
+      graded_by: sh.teacher_name,
+      total_marks: sh.total_marks,
+      max_marks: sh.max_marks,
+      questions: sh.questions.length,
+      answered: sh.questions.filter((q) => q.answered).length,
+      needs_review: sh.needs_review,
+      created_at: sh.created_at,
+    };
+  }
+
+  app.post('/teacher/sheets/read', requireTeacher, aiLimit, async (req, res) => {
+    const b = parse(SheetRead, req.body);
+    const rubricList = b && sheetRubrics(b.question_ids);
+    if (!rubricList) return res.status(400).json({ error: b ? ERR.invalid : ERR.document });
+    const files = filesOf(b.pages);
+    if (!files) return res.status(400).json({ error: ERR.document });
+    const answers = await engine.readSheet(rubricList, files);
+    if (!answers) return res.status(422).json({ error: ERR.noAnswers });
+    res.json({ answers });
+  });
+
+  app.post('/teacher/sheets', requireTeacher, aiLimit, async (req, res) => {
+    const b = parse(SheetGrade, req.body);
+    const rubricList = b && sheetRubrics(b.answers.map((a) => a.question_id));
+    if (!rubricList) return res.status(400).json({ error: ERR.invalid });
+    const questions = [];
+    // One question at a time: each is two model calls, and the free tier
+    // allows only a few calls at once.
+    for (const [i, a] of b.answers.entries()) {
+      const rubric = rubricList[i];
+      const max = rubric.marks ?? 10;
+      let grade;
+      if (a.text) {
+        grade = await engine.gradeAnswer(rubric, a.text, { transcription: a.transcription ?? null });
+      } else {
+        const points = verifyPoints(rubric, [], []).points.map((p) => ({ ...p, comment: 'No answer to this question was found on the sheet.' }));
+        grade = { score: 0, runs: [0, 0], points, review: { needs_review: false, reasons: [] } };
+      }
+      questions.push({
+        question_id: rubric.id,
+        title: rubric.title,
+        prompt: rubric.prompt,
+        answered: !!a.text,
+        answer_text: a.text,
+        transcription: a.transcription ?? null,
+        score: grade.score,
+        marks: marksOf(grade.score, max),
+        max_marks: max,
+        grade,
+      });
+    }
+    const sh = store.putSheet({
+      id: newId('sh'),
+      student_name: b.student_name,
+      teacher_id: req.user.id,
+      teacher_name: req.user.name,
+      created_at: new Date().toISOString(),
+      total_marks: questions.reduce((t, q) => t + q.marks, 0),
+      max_marks: questions.reduce((t, q) => t + q.max_marks, 0),
+      needs_review: questions.some((q) => q.grade.review.needs_review),
+      questions,
+    });
+    res.status(201).json({ ...sheetSummary(sh), items: sh.questions });
+  });
+
+  app.get('/teacher/sheets', requireTeacher, (_req, res) => {
+    const sheets = store
+      .sheets()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map(sheetSummary);
+    res.json({ sheets });
+  });
+
+  app.get('/teacher/sheets/:id', requireTeacher, (req, res) => {
+    const sh = store.sheet(req.params.id);
+    if (!sh) return res.status(404).json({ error: 'answer sheet not found' });
+    res.json({ ...sheetSummary(sh), items: sh.questions });
+  });
+
   // ── Web app ────────────────────────────────────────────────────────────────
 
   if (publicDir && fs.existsSync(path.join(publicDir, 'index.html'))) {
@@ -507,7 +700,7 @@ export function createApp({
     }
     if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: ERR.invalid });
     if (err?.type === 'entity.too.large') {
-      return res.status(req.path === '/transcribe' ? 400 : 413).json({ error: req.path === '/transcribe' ? ERR.photo : ERR.invalid });
+      return UPLOAD_PATHS.has(req.path) ? res.status(400).json({ error: ERR.document }) : res.status(413).json({ error: ERR.invalid });
     }
     console.error(err);
     res.status(500).json({ error: 'Something went wrong on our side. Please try again.' });

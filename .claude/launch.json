@@ -4,14 +4,37 @@
     {
       "name": "vivduck",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["backend/server/server.js"],
+      "runtimeArgs": [
+        "backend/server/server.js"
+      ],
       "port": 8000
     },
     {
       "name": "vivduck-web",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8090", "--directory", "app/build/web"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8090",
+        "--directory",
+        "app/build/web"
+      ],
       "port": 8090
+    },
+    {
+      "name": "vivduck-offline-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LLM_API_KEY=",
+        "GEMINI_API_KEY=",
+        "OFFLINE_GRADER=true",
+        "SEED_DEMO_ACCOUNTS=true",
+        "DATA_DIR=",
+        "PORT=8001",
+        "node",
+        "backend/server/server.js"
+      ],
+      "port": 8001
     }
   ]
 }

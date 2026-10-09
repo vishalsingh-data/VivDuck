@@ -46,12 +46,14 @@ function withTimeout(promise, ms) {
 
 /**
  * Asks the model for JSON matching [schema].
+ * files are photos or PDFs sent with the prompt, in order (one image is the same as files: [image]).
  * @param {{ system: string, prompt: string, schema: import('zod').ZodType,
- *           image?: { mimeType: string, data: string }, temperature?: number }} opts
+ *           image?: { mimeType: string, data: string },
+ *           files?: { mimeType: string, data: string }[], temperature?: number }} opts
  */
-async function generateJson({ system, prompt, schema, image, temperature = 0.2 }) {
+async function generateJson({ system, prompt, schema, image, files, temperature = 0.2 }) {
   const parts = [{ text: prompt }];
-  if (image) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+  for (const f of files ?? (image ? [image] : [])) parts.push({ inlineData: { mimeType: f.mimeType, data: f.data } });
   const config = {
     systemInstruction: system,
     temperature,

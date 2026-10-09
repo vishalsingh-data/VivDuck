@@ -144,6 +144,30 @@ class FakeApi implements VivaApi {
   Future<void> deleteQuestion(String id) => throw UnimplementedError();
 
   @override
+  Future<Transcription> transcribeDocument(
+    String questionId,
+    List<UploadPage> pages,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<List<SheetAnswer>> readSheet(
+    List<String> questionIds,
+    List<UploadPage> pages,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<AnswerSheet> gradeSheet(
+    String studentName,
+    List<SheetAnswerInput> answers,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<List<AnswerSheet>> getSheets() => throw UnimplementedError();
+
+  @override
+  Future<AnswerSheet> getSheet(String id) => throw UnimplementedError();
+
+  @override
   Future<TeacherSummary> getTeacherSummary() => throw UnimplementedError();
 
   @override

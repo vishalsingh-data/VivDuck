@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const EMPTY = () => ({ users: [], tokens: {}, sessions: {}, questions: {} });
+const EMPTY = () => ({ users: [], tokens: {}, sessions: {}, questions: {}, sheets: {} });
 
 export class Store {
   constructor(dir = null) {
@@ -58,6 +58,13 @@ export class Store {
     this.data.tokens[token] = userId;
     this.save();
   }
+  /** Signs a user out everywhere except [keep] (after a password change). */
+  dropTokens(userId, keep = null) {
+    for (const [t, id] of Object.entries(this.data.tokens)) {
+      if (id === userId && t !== keep) delete this.data.tokens[t];
+    }
+    this.save();
+  }
 
   // Questions written by teachers or students (rubric + who/when)
   question(id) {
@@ -83,5 +90,18 @@ export class Store {
   }
   sessions() {
     return Object.values(this.data.sessions);
+  }
+
+  // Whole answer sheets a teacher scanned and graded
+  sheet(id) {
+    return this.data.sheets[id] ?? null;
+  }
+  putSheet(s) {
+    this.data.sheets[s.id] = s;
+    this.save();
+    return s;
+  }
+  sheets() {
+    return Object.values(this.data.sheets);
   }
 }

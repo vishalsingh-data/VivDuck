@@ -11,6 +11,7 @@ import '../core/widgets.dart';
 import 'charts.dart';
 import 'report_screen.dart';
 import 'rubric_points.dart';
+import 'sheets_screen.dart';
 
 class TeacherScreen extends StatefulWidget {
   const TeacherScreen({super.key});
@@ -52,6 +53,13 @@ class _TeacherScreenState extends State<TeacherScreen> {
                     child: VDTopBar(
                       showBack: true,
                       actions: [
+                        IconButton(
+                          tooltip: 'Grade an answer sheet',
+                          onPressed: () => Navigator.of(
+                            context,
+                          ).push(vdRoute(const SheetsScreen())),
+                          icon: const Icon(Icons.document_scanner_outlined),
+                        ),
                         IconButton(
                           tooltip: 'Refresh',
                           onPressed: _refresh,
@@ -1089,6 +1097,7 @@ class _NameCell extends StatelessWidget {
                 [
                   if (s.sample) 'Sample',
                   if (s.source == 'photo') 'Photo',
+                  if (s.source == 'document') 'Document',
                   _ago(s.finishedAt),
                 ].join(' · '),
                 style: TextStyle(fontSize: 12, color: context.inkSoft),

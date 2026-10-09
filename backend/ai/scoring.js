@@ -90,6 +90,11 @@ export function score(points) {
   return Math.round((100 * got) / total);
 }
 
+/** A 0-100 score as marks out of [max], to the nearest half mark. */
+export function marksOf(score, max) {
+  return Math.round((score / 100) * max * 2) / 2;
+}
+
 /** Heaviest missing point, else heaviest partial, else heaviest overall. */
 export function weakest(points) {
   for (const s of ['missing', 'partial']) {

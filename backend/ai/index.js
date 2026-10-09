@@ -41,6 +41,16 @@ const LabelSchema = z.object({
 
 const QuestionSchema = z.object({ question: z.string().min(5).max(400) });
 
+const TrapSchema = z.object({
+  false_claim: z.string().min(5).max(400),
+  truth: z.string().min(5).max(500),
+});
+
+const FactCheckSchema = z.object({
+  definitely_false: z.boolean(),
+  reason: z.string(),
+});
+
 const FinalSchema = LabelSchema.extend({
   trap_caught: z.boolean(),
   trap_explanation: z.string(),
@@ -71,6 +81,21 @@ const TranscriptSchema = z.object({
   text: z.string(),
   confidence: z.number().min(0).max(1),
 });
+
+const SheetSchema = z.object({
+  has_writing: z.boolean(),
+  answers: z.array(
+    z.object({
+      question_id: z.string(),
+      found: z.boolean(),
+      text: z.string(),
+      confidence: z.number().min(0).max(1),
+    }),
+  ),
+});
+
+const TRANSCRIBER =
+  "You transcribe handwritten exam answers exactly as written. You never correct, complete or improve the student's content, spelling or reasoning.";
 
 // ── Prompts ──────────────────────────────────────────────────────────────────
 
@@ -179,13 +204,73 @@ Example of the style: "${fallback}"`,
     );
   }
 
-  /** Trap: a deliberately false claim from the rubric. Fixed, so it is always really false. */
-  function trapQuestion(rubric) {
-    return `A classmate told me: “${rubric.trap.false_claim}” Do you agree?`;
+  /** The claim as the student hears it. */
+  const trapText = (claim) => `A classmate told me: “${claim}” Do you agree?`;
+
+  /** A second, independent call: is [claim] really false? Anything arguable fails. */
+  async function factCheck(rubric, claim) {
+    const out = await llm({
+      system: 'You are a careful fact-checker for exam material. You answer strictly and never give the benefit of the doubt.',
+      prompt: `Topic: ${rubric.title}. Question: ${rubric.prompt}
+
+Fact-check this claim:
+"${claim}"
+
+- definitely_false: true only if the claim is clearly and unambiguously false by the standard, textbook understanding of this topic. false if it is true, partly true, true in some common cases, a matter of opinion, or depends on assumptions.
+- reason: one sentence explaining your verdict.`,
+      schema: FactCheckSchema,
+      temperature: 0,
+    });
+    return out?.definitely_false === true;
+  }
+
+  /**
+   * Trap: Gemini writes a believable false claim for this question and this
+   * student's answers, and a separate call checks it really is false, so a
+   * student who rejects it is never marked wrong. Returns the claim and why
+   * it is false, which finalise needs to judge the reply. Falls back to the
+   * rubric's stored claim only when the model is unavailable or no claim
+   * passes the check.
+   */
+  async function trapQuestion(rubric, texts) {
+    const stored = { false_claim: rubric.trap.false_claim, truth: rubric.trap.truth, source: 'rubric' };
+    if (llm) {
+      const avoid = [];
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const out = await llm({
+            system: EXAMINER,
+            prompt: `Topic: ${rubric.title}. Question: ${rubric.prompt}
+
+Key ideas a good answer contains:
+${rubric.points.map((p) => `- ${p.statement}`).join('\n')}
+
+${studentBlock(texts)}
+
+Write ONE false claim to test whether this student really understands the topic. They will be told a classmate said it and asked whether they agree.
+- false_claim: a confident statement (at most 40 words) about one of the key ideas above, preferably one the student wrote about, that is DEFINITELY false but sounds believable: a common misconception, or a subtle twist of a true idea that someone with only surface knowledge might accept. Not absurd, not a matter of opinion, not "it depends", and not something the student already said is false. Do not mention the student or the classmate.
+- truth: one or two sentences explaining why it is false.
+Write in the same language as the question.${avoid.length ? `\nDo not reuse these claims, which were rejected as not clearly false:\n${avoid.map((c) => `- ${c}`).join('\n')}` : ''}`,
+            schema: TrapSchema,
+            temperature: 0.7,
+          });
+          const claim = out?.false_claim?.trim();
+          if (!claim || !out.truth?.trim()) continue;
+          if (await factCheck(rubric, claim)) {
+            const trap = { false_claim: claim, truth: out.truth.trim(), source: 'ai' };
+            return { ...trap, text: trapText(trap.false_claim) };
+          }
+          avoid.push(claim);
+        } catch {
+          break; // model unavailable: use the stored claim rather than stall the viva
+        }
+      }
+    }
+    return { ...stored, text: trapText(stored.false_claim) };
   }
 
   /** Final re-grade with all follow-ups, plus trap and Bloom judgement. */
-  async function finalise(rubric, { answer, replies, grade }) {
+  async function finalise(rubric, { answer, replies, grade, trap = rubric.trap }) {
     const texts = [answer, ...replies];
     const trapReply = replies[2] ?? '';
     // One call: re-label every point with the follow-ups as extra evidence,
@@ -196,8 +281,8 @@ Example of the style: "${fallback}"`,
           prompt: `${labelPrompt(rubric, texts)}
 
 ALSO judge the viva. The last follow-up answer is the student's reply to this deliberately FALSE claim, which they were asked whether they agree with:
-"${rubric.trap.false_claim}"
-The truth: ${rubric.trap.truth}
+"${trap.false_claim}"
+The truth: ${trap.truth}
 - trap_caught: true only if they reject the claim (or clearly doubt it) AND give a reason that is at least roughly correct. Agreeing, hedging without a reason, or a wrong reason is false.
 - trap_explanation: one sentence in the third person ("The student ...") saying what they did with the claim.
 - bloom_reached: the highest Bloom's taxonomy level the student convincingly demonstrated across all answers (Remember, Understand, Apply, Analyse, Evaluate, Create). Catching the trap with a sound reason shows Analyse or above.`,
@@ -212,8 +297,8 @@ The truth: ${rubric.trap.truth}
     const trapExplanation = judge
       ? judge.trap_explanation
       : trapCaught
-        ? `The student rejected the false claim. ${rubric.trap.truth}`
-        : `The student went along with a false claim: “${rubric.trap.false_claim}” ${rubric.trap.truth}`;
+        ? `The student rejected the false claim. ${trap.truth}`
+        : `The student went along with a false claim: “${trap.false_claim}” ${trap.truth}`;
     return {
       score_after: Math.max(grade.score, score(points)),
       key_points: points,
@@ -225,33 +310,82 @@ The truth: ${rubric.trap.truth}
     };
   }
 
-  /** Word-for-word transcription of one handwritten page (contract 07). */
-  async function transcribe(rubric, { data, mimeType }) {
+  /** One transcription as the routes return it, or null when nothing was written. */
+  function transcriptOf({ text, confidence }) {
+    if (!text?.trim()) return null;
+    const unclear = (text.match(/\[\?\]/g) ?? []).length;
+    const c = Math.round(confidence * 100) / 100;
+    return {
+      text: text.trim(),
+      legibility: c < 0.8 || unclear > 0 ? 'unclear' : 'clear',
+      confidence: c,
+      unclear_words: unclear,
+    };
+  }
+
+  /**
+   * Word-for-word transcription of a handwritten answer to one question
+   * (contract 07). [pages] are photos or PDFs, in reading order.
+   */
+  async function transcribe(rubric, pages) {
     let out;
     if (llm) {
+      const many = pages.length > 1 || pages[0].mimeType === 'application/pdf';
+      const intro =
+        pages.length > 1 ? `These ${pages.length} files are the pages, in order, of` : many ? 'This document should contain' : 'This photo should contain';
       out = await llm({
-        system:
-          'You transcribe handwritten exam answers exactly as written. You never correct, complete or improve the student\'s content, spelling or reasoning.',
-        prompt: `This photo should contain a student's handwritten answer to: "${rubric?.prompt ?? 'an exam question'}".
-- has_writing: false if there is no handwriting in the photo.
-- text: the handwriting word for word, in reading order. Write [?] for each word you cannot read. Keep the student's mistakes. Ignore crossed-out words.
+        system: TRANSCRIBER,
+        prompt: `${intro} a student's handwritten answer to: "${rubric?.prompt ?? 'an exam question'}".
+- has_writing: false if there is no handwriting at all.
+- text: the handwriting word for word, in reading order${many ? ', continuing from one page to the next without page numbers or headers' : ''}. Write [?] for each word you cannot read. Keep the student's mistakes. Ignore crossed-out words.
 - confidence: from 0 to 1, how sure you are that the transcription is exactly right.`,
         schema: TranscriptSchema,
-        image: { data, mimeType },
+        files: pages,
         temperature: 0,
       });
     } else {
       out = { has_writing: true, text: kw.HANDWRITTEN[rubric?.id] ?? kw.HANDWRITTEN.binary_search, confidence: 0.74 };
     }
-    if (!out.has_writing || !out.text.trim()) return null;
-    const unclear = (out.text.match(/\[\?\]/g) ?? []).length;
-    const confidence = Math.round(out.confidence * 100) / 100;
-    return {
-      text: out.text.trim(),
-      legibility: confidence < 0.8 || unclear > 0 ? 'unclear' : 'clear',
-      confidence,
-      unclear_words: unclear,
-    };
+    return out.has_writing ? transcriptOf(out) : null;
+  }
+
+  /**
+   * Reads a whole answer sheet (contract 10): finds the answer to each of
+   * [rubrics] and transcribes it word for word. Returns one entry per rubric,
+   * in the same order, or null when the sheet has no writing.
+   */
+  async function readSheet(rubrics, pages) {
+    let out;
+    if (llm) {
+      const list = rubrics.map((r, i) => `Q${i + 1} [id: ${r.id}] (${r.marks ?? 10} marks): ${r.prompt}`).join('\n');
+      out = await llm({
+        system: TRANSCRIBER,
+        prompt: `The attached ${pages.length > 1 ? `${pages.length} files are the pages, in order,` : 'file is'} of one student's handwritten exam answer sheet. The exam has these questions:
+${list}
+
+For EVERY question above, return one entry with its id:
+- found: true if the sheet has an answer to it. Use the question numbers or labels the student wrote (Q1, 1., Ans 2, (a) ...) and, when there are none, what the answer is about. An answer can run across pages; questions can be answered in any order.
+- text: that answer word for word, in reading order, without the question number or label. Write [?] for each word you cannot read. Keep the student's mistakes. Ignore crossed-out words. Never put one answer's words under two questions. "" when not found.
+- confidence: from 0 to 1, how sure you are that the text is exactly right AND belongs to this question.
+- has_writing: false if the sheet has no handwriting at all.`,
+        schema: SheetSchema,
+        files: pages,
+        temperature: 0,
+      });
+    } else {
+      out = {
+        has_writing: true,
+        answers: rubrics.map((r) => ({ question_id: r.id, found: !!kw.HANDWRITTEN[r.id], text: kw.HANDWRITTEN[r.id] ?? '', confidence: 0.74 })),
+      };
+    }
+    if (!out.has_writing) return null;
+    const byId = new Map(out.answers.map((a) => [a.question_id, a]));
+    const answers = rubrics.map((r) => {
+      const a = byId.get(r.id);
+      const t = a?.found ? transcriptOf(a) : null;
+      return t ? { question_id: r.id, found: true, ...t } : { question_id: r.id, found: false, text: '', legibility: 'clear', confidence: 1, unclear_words: 0 };
+    });
+    return answers.some((a) => a.found) ? answers : null;
   }
 
   /**
@@ -305,6 +439,7 @@ Write everything in the same language as the question.`,
     trapQuestion,
     finalise,
     transcribe,
+    readSheet,
     draftRubric,
   };
 }
@@ -319,11 +454,10 @@ function unconfiguredEngine() {
     gradeAnswer: refuse,
     probeQuestion: refuse,
     whatIfQuestion: refuse,
-    trapQuestion: () => {
-      throw new AiNotConfigured('LLM_API_KEY is not set');
-    },
+    trapQuestion: refuse,
     finalise: refuse,
     transcribe: refuse,
+    readSheet: refuse,
     draftRubric: refuse,
   };
 }

@@ -7,13 +7,22 @@ class ShellScope extends InheritedWidget {
   /// The sidebar entry currently open (a session id, or `#class`).
   final ValueNotifier<String?> selected;
 
-  const ShellScope({super.key, required this.selected, required super.child});
+  /// Opens [page] in the content area beside the sidebar.
+  final void Function(Widget page, {String? id})? open;
+
+  const ShellScope({
+    super.key,
+    required this.selected,
+    this.open,
+    required super.child,
+  });
 
   static ShellScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ShellScope>();
 
   @override
-  bool updateShouldNotify(ShellScope old) => old.selected != selected;
+  bool updateShouldNotify(ShellScope old) =>
+      old.selected != selected || old.open != open;
 }
 
 extension InShell on BuildContext {

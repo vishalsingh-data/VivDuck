@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_screen.dart';
+import '../auth/profile_screen.dart';
 import 'api.dart';
 import 'auth.dart';
 import 'duck.dart';
@@ -215,6 +216,27 @@ class Pill extends StatelessWidget {
   }
 }
 
+/// How an answer reached the grader: typed, a photo, or a scanned document.
+class SourcePill extends StatelessWidget {
+  final String source;
+  const SourcePill(this.source, {super.key});
+
+  @override
+  Widget build(BuildContext context) => switch (source) {
+    'photo' => const Pill(
+      'From a photo',
+      color: VD.teal,
+      icon: Icons.photo_camera_outlined,
+    ),
+    'document' => const Pill(
+      'From a document',
+      color: VD.teal,
+      icon: Icons.description_outlined,
+    ),
+    _ => const Pill('Typed', color: VD.inkSoft, icon: Icons.keyboard_outlined),
+  };
+}
+
 /// App bar row with the logo, used on every screen.
 class VDTopBar extends StatelessWidget {
   final List<Widget> actions;
@@ -311,27 +333,37 @@ class AccountButton extends StatelessWidget {
             ),
           );
         }
-        final initials = user.name
-            .split(' ')
-            .where((p) => p.isNotEmpty)
-            .take(2)
-            .map((p) => p[0].toUpperCase())
-            .join();
         final color = user.isTeacher ? VD.teal : VD.orange;
+        final dark = context.isDark;
+        Widget item(IconData icon, String label) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 12),
+            Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+          ],
+        );
         return PopupMenuButton<String>(
           tooltip: 'Account',
           offset: const Offset(0, 48),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          onSelected: (v) async {
-            if (v == 'logout') {
-              await Auth.instance.logout();
-              if (!context.mounted) return;
-              Navigator.of(context).popUntil((r) => r.isFirst);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('You have been signed out.')),
-              );
+          onSelected: (v) {
+            switch (v) {
+              case 'profile':
+                final open = ShellScope.maybeOf(context)?.open;
+                if (open != null) {
+                  open(const ProfileScreen(), id: '#profile');
+                } else {
+                  Navigator.of(context).push(vdRoute(const ProfileScreen()));
+                }
+              case 'theme':
+                themeMode.value = dark ? ThemeMode.light : ThemeMode.dark;
+              case 'help':
+                showGradingHelp(context);
+              case 'logout':
+                signOut(context);
             }
           },
           itemBuilder: (_) => [
@@ -357,15 +389,25 @@ class AccountButton extends StatelessWidget {
               ),
             ),
             const PopupMenuDivider(),
-            const PopupMenuItem(
-              value: 'logout',
-              child: Row(
-                children: [
-                  Icon(Icons.logout_rounded, size: 20),
-                  SizedBox(width: 10),
-                  Text('Sign out'),
-                ],
+            PopupMenuItem(
+              value: 'profile',
+              child: item(Icons.person_outline_rounded, 'Profile'),
+            ),
+            PopupMenuItem(
+              value: 'theme',
+              child: item(
+                dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                dark ? 'Light mode' : 'Dark mode',
               ),
+            ),
+            PopupMenuItem(
+              value: 'help',
+              child: item(Icons.help_outline_rounded, 'How grading works'),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem(
+              value: 'logout',
+              child: item(Icons.logout_rounded, 'Sign out'),
             ),
           ],
           child: Padding(
@@ -374,7 +416,7 @@ class AccountButton extends StatelessWidget {
               radius: 18,
               backgroundColor: color.withValues(alpha: 0.2),
               child: Text(
-                initials,
+                user.initials,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
@@ -513,6 +555,72 @@ class _FadeSlideInState extends State<FadeSlideIn>
       ),
     );
   }
+}
+
+/// What happens to an answer, in plain words, from the account menu.
+void showGradingHelp(BuildContext context) {
+  Widget step(IconData icon, String title, String body) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 22, color: VD.teal),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(body, style: TextStyle(color: context.inkSoft, height: 1.4)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('How grading works'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              step(
+                Icons.checklist_rounded,
+                'Graded against a rubric',
+                'Each question has key points. The AI marks each one solid, partial or missing.',
+              ),
+              step(
+                Icons.format_quote_rounded,
+                'Every mark shows your words',
+                'The AI must quote your answer. If the quote is not really there, the point earns nothing.',
+              ),
+              step(
+                Icons.done_all_rounded,
+                'Graded twice',
+                'If the two gradings disagree, or handwriting was hard to read, a teacher checks it.',
+              ),
+              step(
+                Icons.record_voice_over_outlined,
+                'Three follow-up questions',
+                'A question on your weakest point, a what-if, and a false claim to catch. Good answers can raise your score.',
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Got it'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Small theme toggle shared by top bars.

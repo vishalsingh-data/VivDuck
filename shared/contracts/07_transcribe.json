@@ -2,11 +2,18 @@
   "title": "Transcribe a Handwritten Answer",
   "method": "POST",
   "path": "/transcribe",
-  "notes": "One photo per answer. The AI model transcribes it word for word and does not correct the student's content. Words it cannot read are written as [?]. legibility is unclear when confidence is below 0.8 or any [?] is present. The student confirms or corrects the text before it is graded.",
+  "notes": "One answer to one question: one photo (image_base64 + mime_type), or a document as pages (see request_document): up to 10 JPEG or PNG pages (5 MB each) or a PDF (10 MB), under 15 MB in all, read in order as one answer. The AI model transcribes it word for word and does not correct the student's content. Words it cannot read are written as [?]. legibility is unclear when confidence is below 0.8 or any [?] is present. The student confirms or corrects the text before it is graded, with source photo or document.",
   "request": {
     "question_id": "binary_search",
     "image_base64": "<base64 JPEG or PNG, at most 5 MB>",
     "mime_type": "image/jpeg"
+  },
+  "request_document": {
+    "question_id": "binary_search",
+    "pages": [
+      { "image_base64": "<base64 page 1>", "mime_type": "image/jpeg" },
+      { "image_base64": "<base64 page 2, or a whole PDF>", "mime_type": "application/pdf" }
+    ]
   },
   "response": {
     "text": "Binary search needs a sorted list. It checks the middle element and compares it to the [?]. Then it throws away half of the list and repeats.",
@@ -16,6 +23,7 @@
   },
   "errors": [
     { "status": 400, "meaning": "No image, unsupported type, or larger than 5 MB", "body": { "error": "Please upload a JPEG or PNG photo under 5 MB." } },
+    { "status": 400, "meaning": "A document with more than 10 pages, an unsupported type, or too large", "body": { "error": "Please upload up to 10 JPEG or PNG pages (5 MB each) or a PDF (10 MB), under 15 MB in all." } },
     { "status": 422, "meaning": "No handwriting found in the photo", "body": { "error": "We couldn't find any writing in that photo. Try again with the page filling the frame." } },
     { "status": 502, "meaning": "Upstream AI service unavailable", "body": { "error": "The duck is having trouble thinking. Please try again." } }
   ]

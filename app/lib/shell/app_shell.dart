@@ -12,6 +12,7 @@ import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../report_teacher/report_screen.dart';
 import '../report_teacher/questions_screen.dart';
+import '../report_teacher/sheets_screen.dart';
 import '../report_teacher/teacher_screen.dart';
 import '../viva/continue_viva_card.dart';
 import '../viva/answer_form.dart';
@@ -72,6 +73,7 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return ShellScope(
       selected: _selected,
+      open: _open,
       child: Scaffold(
         body: Row(
           children: [
@@ -85,6 +87,7 @@ class _AppShellState extends State<AppShell> {
               onOpenClass: () => _open(const TeacherScreen(), id: '#class'),
               onOpenQuestions: () =>
                   _open(const QuestionsScreen(), id: '#questions'),
+              onOpenSheets: () => _open(const SheetsScreen(), id: '#sheets'),
             ),
             Expanded(
               child: ClipRect(
@@ -107,7 +110,11 @@ class _Sidebar extends StatelessWidget {
   final AppUser user;
   final bool collapsed;
   final ValueNotifier<String?> selected;
-  final VoidCallback onToggle, onNewViva, onOpenClass, onOpenQuestions;
+  final VoidCallback onToggle,
+      onNewViva,
+      onOpenClass,
+      onOpenQuestions,
+      onOpenSheets;
   final ValueChanged<String> onOpenReport;
 
   const _Sidebar({
@@ -119,6 +126,7 @@ class _Sidebar extends StatelessWidget {
     required this.onOpenReport,
     required this.onOpenClass,
     required this.onOpenQuestions,
+    required this.onOpenSheets,
   });
 
   @override
@@ -193,6 +201,17 @@ class _Sidebar extends StatelessWidget {
                         collapsed: collapsed,
                         selected: sel == '#questions',
                         onTap: onOpenQuestions,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ValueListenableBuilder(
+                      valueListenable: selected,
+                      builder: (context, sel, _) => _NavItem(
+                        icon: Icons.document_scanner_outlined,
+                        label: 'Answer sheets',
+                        collapsed: collapsed,
+                        selected: sel == '#sheets',
+                        onTap: onOpenSheets,
                       ),
                     ),
                   ],

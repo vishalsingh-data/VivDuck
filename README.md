@@ -5,7 +5,8 @@ The AI examiner that grades your answer, then asks if you really understand it.
 - Works for any question, in any subject or language:
   - **Teachers** type a question; Gemini drafts the rubric (key points, weights, a trap claim, follow-ups); the teacher edits it and publishes it (sidebar > Questions).
   - **Students** can pick a teacher's question, a sample, or type their own. For their own question Gemini drafts the rubric, and the answer is flagged so a teacher can check it.
-- Grades a descriptive answer (typed or a photo of handwriting) against that rubric.
+- Grades a descriptive answer (typed, a photo of handwriting, or a scanned document of up to 10 pages or a PDF) against that rubric.
+- **Whole answer sheets** (sidebar > Answer sheets): a teacher scans a student's full exam and picks the questions on it. Gemini finds and transcribes each answer, the teacher checks the text, then every answer is graded against its own rubric for a per-question and total marksheet.
 - Every mark cites the student's own words. The quote is checked in code; a quote that isn't really in the answer earns nothing.
 - Grades twice and flags the answer for a teacher when the two runs disagree, the answer was pasted, or the handwriting was hard to read.
 - Runs a short viva: a probe on the weakest point, a what-if, and a deliberately false claim the student must catch.

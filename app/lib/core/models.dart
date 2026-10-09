@@ -1,5 +1,8 @@
 // Data models mirroring shared/contracts/*.json. Field names match the wire format.
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 /// A question a student can answer (00_questions.json): a teacher's, a
 /// sample, or the student's own ([Question.custom]).
 class Question {
@@ -165,14 +168,131 @@ class Transcription {
   );
 }
 
+/// One page of a scanned answer: a photo, or a whole PDF (07, 10).
+class UploadPage {
+  final Uint8List bytes;
+  final String mimeType; // image/jpeg | image/png | application/pdf
+  final String name;
+  const UploadPage(this.bytes, this.mimeType, this.name);
+
+  bool get isPdf => mimeType == 'application/pdf';
+
+  Map<String, dynamic> toJson() => {
+    'image_base64': base64Encode(bytes),
+    'mime_type': mimeType,
+  };
+}
+
+/// One question's answer as read from a whole answer sheet (10, read step).
+class SheetAnswer {
+  final String questionId;
+  final bool found;
+  final Transcription transcription;
+  const SheetAnswer({
+    required this.questionId,
+    required this.found,
+    required this.transcription,
+  });
+
+  factory SheetAnswer.fromJson(Map<String, dynamic> j) => SheetAnswer(
+    questionId: j['question_id'] as String,
+    found: j['found'] as bool? ?? false,
+    transcription: Transcription.fromJson(j),
+  );
+}
+
+/// One question on a graded answer sheet (10).
+class SheetItem {
+  final String questionId;
+  final String title;
+  final String prompt;
+  final bool answered;
+  final String answerText;
+  final int score;
+  final double marks;
+  final int maxMarks;
+  final Grade grade;
+
+  const SheetItem({
+    required this.questionId,
+    required this.title,
+    required this.prompt,
+    required this.answered,
+    required this.answerText,
+    required this.score,
+    required this.marks,
+    required this.maxMarks,
+    required this.grade,
+  });
+
+  factory SheetItem.fromJson(Map<String, dynamic> j) => SheetItem(
+    questionId: j['question_id'] as String,
+    title: j['title'] as String? ?? '',
+    prompt: j['prompt'] as String? ?? '',
+    answered: j['answered'] as bool? ?? false,
+    answerText: j['answer_text'] as String? ?? '',
+    score: (j['score'] as num).toInt(),
+    marks: (j['marks'] as num).toDouble(),
+    maxMarks: (j['max_marks'] as num).toInt(),
+    grade: Grade.fromJson(j['grade'] as Map<String, dynamic>),
+  );
+}
+
+/// A graded answer sheet: the list row, plus every question when opened (10).
+class AnswerSheet {
+  final String sheetId;
+  final String student;
+  final String? gradedBy;
+  final double totalMarks;
+  final int maxMarks;
+  final int questions;
+  final int answered;
+  final bool needsReview;
+  final DateTime createdAt;
+  final List<SheetItem> items;
+
+  const AnswerSheet({
+    required this.sheetId,
+    required this.student,
+    this.gradedBy,
+    required this.totalMarks,
+    required this.maxMarks,
+    required this.questions,
+    required this.answered,
+    required this.needsReview,
+    required this.createdAt,
+    this.items = const [],
+  });
+
+  factory AnswerSheet.fromJson(Map<String, dynamic> j) => AnswerSheet(
+    sheetId: j['sheet_id'] as String,
+    student: j['student'] as String,
+    gradedBy: j['graded_by'] as String?,
+    totalMarks: (j['total_marks'] as num).toDouble(),
+    maxMarks: (j['max_marks'] as num).toInt(),
+    questions: (j['questions'] as num).toInt(),
+    answered: (j['answered'] as num).toInt(),
+    needsReview: j['needs_review'] as bool? ?? false,
+    createdAt: DateTime.parse(j['created_at'] as String),
+    items: [
+      for (final i in (j['items'] as List? ?? const []))
+        SheetItem.fromJson(i as Map<String, dynamic>),
+    ],
+  );
+}
+
+/// "6.5" or "6": marks are whole or half.
+String formatMarks(double m) =>
+    m == m.roundToDouble() ? m.toInt().toString() : m.toStringAsFixed(1);
+
 class CreateSessionRequest {
   final String studentName;
   final Question question;
   final String answerText;
-  final String source; // typed | photo
+  final String source; // typed | photo | document
   final bool pasted;
 
-  /// Set for photographed answers.
+  /// Set for photographed or scanned answers.
   final Transcription? transcription;
   final bool transcriptionEdited;
 

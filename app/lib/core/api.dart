@@ -45,6 +45,23 @@ final questionsChanged = ValueNotifier<int>(0);
 /// Follow-up questions after the written answer: probe, what-if, trap.
 const followUpCount = 3;
 
+/// Upload limits from contract 07: pages of one answer or one answer sheet.
+const maxUploadPages = 10;
+const maxPhotoBytes = 5 * 1024 * 1024;
+const maxPdfBytes = 10 * 1024 * 1024;
+const maxUploadBytes = 15 * 1024 * 1024;
+
+/// Questions on one answer sheet (contract 10).
+const maxSheetQuestions = 10;
+
+/// An answer as the teacher confirmed it, ready to grade (contract 10).
+typedef SheetAnswerInput = ({
+  String questionId,
+  String text,
+  Transcription? transcription,
+  bool edited,
+});
+
 class ApiException implements Exception {
   final int? status;
   final String message;
@@ -59,6 +76,12 @@ abstract class VivaApi {
     String questionId,
     Uint8List image,
     String mimeType,
+  );
+
+  /// Several pages, or a PDF, read in order as one answer.
+  Future<Transcription> transcribeDocument(
+    String questionId,
+    List<UploadPage> pages,
   );
   Future<CreateSessionResponse> createSession(CreateSessionRequest req);
   Future<TurnResponse> submitTurn(
@@ -88,6 +111,25 @@ abstract class VivaApi {
   /// Teacher only: hides a published question from students.
   Future<void> deleteQuestion(String id);
 
+  /// Teacher only: finds and transcribes the answer to each question on a
+  /// scanned answer sheet. One entry per question, in order.
+  Future<List<SheetAnswer>> readSheet(
+    List<String> questionIds,
+    List<UploadPage> pages,
+  );
+
+  /// Teacher only: grades the confirmed answers against their rubrics.
+  Future<AnswerSheet> gradeSheet(
+    String studentName,
+    List<SheetAnswerInput> answers,
+  );
+
+  /// Teacher only: graded answer sheets, newest first (without their items).
+  Future<List<AnswerSheet>> getSheets();
+
+  /// Teacher only: one graded answer sheet with every question.
+  Future<AnswerSheet> getSheet(String id);
+
   bool get isMock;
 
   static final VivaApi instance = apiBaseUrl.isEmpty
@@ -107,11 +149,12 @@ class HttpVivaApi implements VivaApi {
       Uri.parse('${base.replaceAll(RegExp(r'/$'), '')}$path');
 
   Future<Map<String, dynamic>> _send(
-    Future<http.Response> Function() call,
-  ) async {
+    Future<http.Response> Function() call, {
+    Duration timeout = const Duration(seconds: 90),
+  }) async {
     http.Response res;
     try {
-      res = await call().timeout(const Duration(seconds: 90));
+      res = await call().timeout(timeout);
     } catch (_) {
       throw const ApiException(
         "Can't reach the server. Check your connection and try again.",
@@ -136,9 +179,17 @@ class HttpVivaApi implements VivaApi {
       'Authorization': 'Bearer ${Auth.instance.token}',
   };
 
-  Future<Map<String, dynamic>> _post(String path, Object body) => _send(
+  Future<Map<String, dynamic>> _post(
+    String path,
+    Object body, {
+    Duration timeout = const Duration(seconds: 90),
+  }) => _send(
     () => _client.post(_u(path), headers: _json, body: jsonEncode(body)),
+    timeout: timeout,
   );
+
+  /// Reading a long sheet, or grading every question on it, takes a while.
+  static const _slow = Duration(minutes: 4);
 
   Future<Map<String, dynamic>> _get(String path) =>
       _send(() => _client.get(_u(path), headers: _json));
@@ -195,8 +246,66 @@ class HttpVivaApi implements VivaApi {
   );
 
   @override
+  Future<Transcription> transcribeDocument(
+    String questionId,
+    List<UploadPage> pages,
+  ) async => Transcription.fromJson(
+    await _post('/transcribe', {
+      'question_id': questionId,
+      'pages': [for (final p in pages) p.toJson()],
+    }, timeout: _slow),
+  );
+
+  @override
   Future<CreateSessionResponse> createSession(CreateSessionRequest req) async =>
       CreateSessionResponse.fromJson(await _post('/sessions', req.toJson()));
+
+  @override
+  Future<List<SheetAnswer>> readSheet(
+    List<String> questionIds,
+    List<UploadPage> pages,
+  ) async => [
+    for (final a
+        in (await _post('/teacher/sheets/read', {
+              'question_ids': questionIds,
+              'pages': [for (final p in pages) p.toJson()],
+            }, timeout: _slow))['answers']
+            as List)
+      SheetAnswer.fromJson(a as Map<String, dynamic>),
+  ];
+
+  @override
+  Future<AnswerSheet> gradeSheet(
+    String studentName,
+    List<SheetAnswerInput> answers,
+  ) async => AnswerSheet.fromJson(
+    await _post('/teacher/sheets', {
+      'student_name': studentName,
+      'answers': [
+        for (final a in answers)
+          {
+            'question_id': a.questionId,
+            'text': a.text,
+            if (a.transcription != null)
+              'transcription': {
+                'legibility': a.transcription!.legibility,
+                'confidence': a.transcription!.confidence,
+                'edited': a.edited,
+              },
+          },
+      ],
+    }, timeout: _slow),
+  );
+
+  @override
+  Future<List<AnswerSheet>> getSheets() async => [
+    for (final s in (await _get('/teacher/sheets'))['sheets'] as List)
+      AnswerSheet.fromJson(s as Map<String, dynamic>),
+  ];
+
+  @override
+  Future<AnswerSheet> getSheet(String id) async =>
+      AnswerSheet.fromJson(await _get('/teacher/sheets/$id'));
 
   @override
   Future<TurnResponse> submitTurn(
@@ -245,6 +354,7 @@ class MockVivaApi implements VivaApi {
   final _rand = Random();
   final Map<String, _MockSession> _sessions = {};
   final Map<String, int> _teacherScores = {};
+  final List<AnswerSheet> _sheets = [];
   Map<String, Rubric>? _rubrics;
   List<SessionSummary>? _sampleRows;
 
@@ -311,6 +421,140 @@ class MockVivaApi implements VivaApi {
     }
     await _think(1400, 800);
     return MockGrader.transcribe(questionId);
+  }
+
+  static const _badDocument = ApiException(
+    'Please upload up to 10 JPEG or PNG pages (5 MB each) or a PDF (10 MB), under 15 MB in all.',
+    status: 400,
+  );
+
+  /// The same page checks as the server (contract 07).
+  static void _checkPages(List<UploadPage> pages) {
+    var total = 0;
+    for (final p in pages) {
+      final max = p.isPdf ? maxPdfBytes : maxPhotoBytes;
+      if (p.bytes.isEmpty || p.bytes.length > max) throw _badDocument;
+      total += p.bytes.length;
+    }
+    if (pages.isEmpty || pages.length > maxUploadPages) throw _badDocument;
+    if (total > maxUploadBytes) throw _badDocument;
+  }
+
+  @override
+  Future<Transcription> transcribeDocument(
+    String questionId,
+    List<UploadPage> pages,
+  ) async {
+    _checkPages(pages);
+    await _think(1600, 900);
+    return MockGrader.transcribe(questionId);
+  }
+
+  @override
+  Future<List<SheetAnswer>> readSheet(
+    List<String> questionIds,
+    List<UploadPage> pages,
+  ) async {
+    _checkPages(pages);
+    final rubrics = await _loadRubrics();
+    await _think(1800, 900);
+    return [
+      for (final id in questionIds)
+        rubrics.containsKey(id)
+            ? SheetAnswer(
+                questionId: id,
+                found: true,
+                transcription: MockGrader.transcribe(id),
+              )
+            : SheetAnswer(
+                questionId: id,
+                found: false,
+                transcription: const Transcription(
+                  text: '',
+                  legibility: 'clear',
+                  confidence: 1,
+                  unclearWords: 0,
+                ),
+              ),
+    ];
+  }
+
+  @override
+  Future<AnswerSheet> gradeSheet(
+    String studentName,
+    List<SheetAnswerInput> answers,
+  ) async {
+    final rubrics = await _loadRubrics();
+    if (answers.any((a) => !rubrics.containsKey(a.questionId))) {
+      throw _needsServer;
+    }
+    await _think(1500, 900);
+    final items = [
+      for (final a in answers)
+        () {
+          final r = rubrics[a.questionId]!;
+          final grade = a.text.trim().isEmpty
+              ? Grade(
+                  score: 0,
+                  runs: const [0, 0],
+                  points: [
+                    for (final p in r.points)
+                      KeyPoint(
+                        id: p.id,
+                        statement: p.statement,
+                        weight: p.weight,
+                        status: KeyPointStatus.missing,
+                        comment:
+                            'No answer to this question was found on the sheet.',
+                      ),
+                  ],
+                  review: Review.none,
+                )
+              : MockGrader.grade(r, a.text, transcription: a.transcription);
+          final max = r.question.marks;
+          return SheetItem(
+            questionId: r.question.id,
+            title: r.question.title,
+            prompt: r.question.prompt,
+            answered: a.text.trim().isNotEmpty,
+            answerText: a.text.trim(),
+            score: grade.score,
+            marks: (grade.score / 100 * max * 2).round() / 2,
+            maxMarks: max,
+            grade: grade,
+          );
+        }(),
+    ];
+    final sheet = AnswerSheet(
+      sheetId: 'sh_${_rand.nextInt(0xFFFF).toRadixString(16).padLeft(4, '0')}',
+      student: studentName,
+      gradedBy: 'You',
+      totalMarks: items.fold(0.0, (t, i) => t + i.marks),
+      maxMarks: items.fold(0, (t, i) => t + i.maxMarks),
+      questions: items.length,
+      answered: items.where((i) => i.answered).length,
+      needsReview: items.any((i) => i.grade.review.needsReview),
+      createdAt: DateTime.now().toUtc(),
+      items: items,
+    );
+    _sheets.insert(0, sheet);
+    return sheet;
+  }
+
+  @override
+  Future<List<AnswerSheet>> getSheets() async {
+    await _think(300, 300);
+    return List.of(_sheets);
+  }
+
+  @override
+  Future<AnswerSheet> getSheet(String id) async {
+    await _think(300, 300);
+    return _sheets.firstWhere(
+      (s) => s.sheetId == id,
+      orElse: () =>
+          throw const ApiException('answer sheet not found', status: 404),
+    );
   }
 
   @override

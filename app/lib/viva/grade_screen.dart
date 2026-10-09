@@ -165,13 +165,7 @@ class AnswerCard extends StatelessWidget {
               Expanded(
                 child: Text('Your answer', style: context.text.titleLarge),
               ),
-              Pill(
-                request.source == 'photo' ? 'From a photo' : 'Typed',
-                color: request.source == 'photo' ? VD.teal : VD.inkSoft,
-                icon: request.source == 'photo'
-                    ? Icons.photo_camera_outlined
-                    : Icons.keyboard_outlined,
-              ),
+              SourcePill(request.source),
             ],
           ),
           const SizedBox(height: 8),

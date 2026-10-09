@@ -536,7 +536,6 @@ class _AnswerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final photo = report.source == 'photo';
     return VDCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -546,13 +545,7 @@ class _AnswerCard extends StatelessWidget {
               Expanded(
                 child: Text('The answer', style: context.text.titleLarge),
               ),
-              Pill(
-                photo ? 'From a photo' : 'Typed',
-                color: photo ? VD.teal : VD.inkSoft,
-                icon: photo
-                    ? Icons.photo_camera_outlined
-                    : Icons.keyboard_outlined,
-              ),
+              SourcePill(report.source),
             ],
           ),
           if (report.questionPrompt.isNotEmpty) ...[

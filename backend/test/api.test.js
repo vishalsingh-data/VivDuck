@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { boot, ANSWER } from './helpers.js';
 import { AiError } from '../ai/llm.js';
+import { rubrics } from '../ai/rubrics.js';
 
 async function login(call, email) {
   const r = await call('POST', '/auth/login', { email, password: 'quack-quack-1' });
@@ -143,6 +144,58 @@ test('model labels go through the evidence check and double grading', async () =
   }
 });
 
+test('the trap is written by the model for each viva, and only a claim that is really false is used', async () => {
+  /** claims: what the model writes, in turn; verdicts: the fact-checker's answers, in turn. */
+  const fakeModel = ({ claims, verdicts, judged }) => async ({ prompt }) => {
+    if (prompt.includes('deliberately FALSE')) {
+      judged.push(prompt);
+      return { points: [], trap_caught: true, trap_explanation: 'The student rejected it.', bloom_reached: 'Analyse' };
+    }
+    if (prompt.includes('For EVERY rubric point')) return { points: [] };
+    if (prompt.includes('Write ONE false claim')) {
+      const claim = claims.shift();
+      if (claim === 'down') throw new AiError('model busy');
+      return { false_claim: claim, truth: `Why "${claim}" is false.` };
+    }
+    if (prompt.includes('Fact-check this claim')) return { definitely_false: verdicts.shift(), reason: 'checked' };
+    return { question: 'Next?' };
+  };
+  const viva = async (model) => {
+    const { call, close } = await boot({ llm: model, seed: { samples: false, demoAccounts: false } });
+    try {
+      const id = (await call('POST', '/sessions', { student_name: 'Al', question_id: 'binary_search', answer_text: ANSWER })).body.session_id;
+      await call('POST', `/sessions/${id}/turn`, { text: 'one' });
+      const t2 = (await call('POST', `/sessions/${id}/turn`, { text: 'two' })).body;
+      await call('POST', `/sessions/${id}/turn`, { text: 'No, that is wrong.' });
+      await call('GET', `/sessions/${id}/report`);
+      return t2.question;
+    } finally {
+      await close();
+    }
+  };
+
+  // The first claim passes the check: asked, and judged against that claim.
+  let judged = [];
+  let q = await viva(fakeModel({ claims: ['Binary search needs the list to be stored in an array of even length.'], verdicts: [true], judged }));
+  assert.equal(q, 'A classmate told me: “Binary search needs the list to be stored in an array of even length.” Do you agree?');
+  assert.match(judged[0], /array of even length/);
+  assert.match(judged[0], /Why "Binary search needs the list/);
+
+  // The first claim is arguable, so it is thrown away and a second one written.
+  judged = [];
+  q = await viva(fakeModel({ claims: ['Binary search is always the best way to search.', 'Binary search works on unsorted lists.'], verdicts: [false, true], judged }));
+  assert.match(q, /works on unsorted lists/);
+
+  // Nothing passes, or the model is down: the question's stored claim is used.
+  const stored = rubrics.get('binary_search').trap.false_claim;
+  for (const model of [{ claims: ['a claim', 'b claim'], verdicts: [false, false] }, { claims: ['down'], verdicts: [] }]) {
+    judged = [];
+    q = await viva(fakeModel({ ...model, judged }));
+    assert.equal(q, `A classmate told me: “${stored}” Do you agree?`);
+    assert.ok(judged[0].includes(stored));
+  }
+});
+
 test('model failure is a 502, and a failing question falls back to the rubric', async () => {
   const llm = async ({ prompt }) => {
     if (prompt.includes('For EVERY rubric point')) throw new AiError('down');
@@ -172,6 +225,85 @@ test('transcription validates the photo and flags unclear handwriting', async ()
   }
 });
 
+test('a multi-page document or PDF is transcribed as one answer', async () => {
+  const { call, close } = await boot();
+  try {
+    const page = Buffer.from('fake page bytes').toString('base64');
+    const pdf = { image_base64: page, mime_type: 'application/pdf' };
+    const r = await call('POST', '/transcribe', { question_id: 'binary_search', pages: [pdf] });
+    assert.equal(r.status, 200);
+    assert.match(r.body.text, /sorted/);
+    const two = await call('POST', '/transcribe', { question_id: 'binary_search', pages: [{ image_base64: page, mime_type: 'image/jpeg' }, { image_base64: page, mime_type: 'image/png' }] });
+    assert.equal(two.status, 200);
+    const tooMany = await call('POST', '/transcribe', { question_id: 'binary_search', pages: Array(11).fill(pdf) });
+    assert.equal(tooMany.status, 400);
+    assert.match(tooMany.body.error, /10 JPEG or PNG pages/);
+    assert.equal((await call('POST', '/transcribe', { pages: [{ image_base64: page, mime_type: 'image/gif' }] })).status, 400);
+
+    // A photographed document is graded with the handwriting flag, like a photo.
+    const created = await call('POST', '/sessions', {
+      student_name: 'Dee', question_id: 'binary_search', answer_text: r.body.text, source: 'document',
+      transcription: { legibility: r.body.legibility, confidence: r.body.confidence, edited: false },
+    });
+    assert.equal(created.status, 201);
+    assert.ok(created.body.grade.review.reasons.some((x) => x.code === 'handwriting'));
+  } finally {
+    await close();
+  }
+});
+
+test('teachers scan a whole answer sheet and grade every question on it (contract 10)', async () => {
+  const { call, close } = await boot({ seed: { samples: false, demoAccounts: true } });
+  try {
+    const teacher = await login(call, 'teacher@vivduck.test');
+    const student = await login(call, 'student@vivduck.test');
+    const pages = [{ image_base64: Buffer.from('sheet').toString('base64'), mime_type: 'application/pdf' }];
+    const ids = ['binary_search', 'normalisation'];
+
+    assert.equal((await call('POST', '/teacher/sheets/read', { question_ids: ids, pages })).status, 401);
+    assert.equal((await call('POST', '/teacher/sheets/read', { question_ids: ids, pages }, student)).status, 403);
+    assert.equal((await call('POST', '/teacher/sheets/read', { question_ids: ['nope'], pages }, teacher)).status, 400);
+    assert.equal((await call('POST', '/teacher/sheets/read', { question_ids: ['binary_search', 'binary_search'], pages }, teacher)).status, 400);
+
+    const read = await call('POST', '/teacher/sheets/read', { question_ids: ids, pages }, teacher);
+    assert.equal(read.status, 200);
+    assert.deepEqual(read.body.answers.map((a) => a.question_id), ids, 'one answer per question, in order');
+    assert.ok(read.body.answers.every((a) => a.found && a.text));
+
+    // The teacher keeps the first answer and finds no answer to the second.
+    const [a1] = read.body.answers;
+    const graded = await call('POST', '/teacher/sheets', {
+      student_name: 'Riya',
+      answers: [
+        { question_id: a1.question_id, text: a1.text, transcription: { legibility: a1.legibility, confidence: a1.confidence } },
+        { question_id: 'normalisation', text: '' },
+      ],
+    }, teacher);
+    assert.equal(graded.status, 201);
+    const sh = graded.body;
+    assert.equal(sh.items.length, 2);
+    assert.equal(sh.answered, 1);
+    const [q1, q2] = sh.items;
+    assert.ok(q1.score > 0);
+    assert.equal(q1.marks, Math.round((q1.score / 100) * q1.max_marks * 2) / 2);
+    for (const p of q1.grade.points) if (p.status !== 'missing') assert.ok(a1.text.includes(p.evidence_quote));
+    assert.equal(q2.answered, false);
+    assert.equal(q2.marks, 0);
+    assert.ok(q2.grade.points.every((p) => p.status === 'missing'));
+    assert.equal(sh.total_marks, q1.marks);
+    assert.equal(sh.max_marks, q1.max_marks + q2.max_marks);
+    assert.equal(sh.needs_review, true, 'unclear handwriting is flagged');
+
+    const list = (await call('GET', '/teacher/sheets', undefined, teacher)).body.sheets;
+    assert.equal(list.length, 1);
+    assert.equal(list[0].sheet_id, sh.sheet_id);
+    assert.equal((await call('GET', `/teacher/sheets/${sh.sheet_id}`, undefined, teacher)).body.items.length, 2);
+    assert.equal((await call('GET', '/teacher/sheets/sh_missing', undefined, teacher)).status, 404);
+  } finally {
+    await close();
+  }
+});
+
 test('with no model and no offline flag, grading is refused rather than faked', async () => {
   const { createApp } = await import('../server/app.js');
   const { createEngine } = await import('../ai/index.js');
@@ -191,6 +323,36 @@ test('with no model and no offline flag, grading is refused rather than faked', 
     assert.equal(summary.status, 200, 'non-AI routes still work');
   } finally {
     await new Promise((r) => server.close(r));
+  }
+});
+
+test('a signed-in user can edit their name and change their password (contract 11)', async () => {
+  const { call, close } = await boot();
+  try {
+    const reg = await call('POST', '/auth/register', { name: 'Riya', email: 'riya@example.com', password: 'first-pass', role: 'student' });
+    const token = reg.body.token;
+    const other = (await call('POST', '/auth/login', { email: 'riya@example.com', password: 'first-pass' })).body.token;
+
+    assert.equal((await call('GET', '/auth/me')).status, 401);
+    assert.equal((await call('GET', '/auth/me', undefined, token)).body.user.name, 'Riya');
+    assert.equal((await call('PATCH', '/auth/me', { name: '  ' }, token)).status, 400);
+    const renamed = await call('PATCH', '/auth/me', { name: 'Riya Sharma' }, token);
+    assert.equal(renamed.body.user.name, 'Riya Sharma');
+    assert.equal(renamed.body.user.password, undefined);
+
+    assert.equal((await call('POST', '/auth/password', { current_password: 'wrong', new_password: 'second-pass' }, token)).status, 401);
+    assert.equal((await call('POST', '/auth/password', { current_password: 'first-pass', new_password: 'short' }, token)).status, 400);
+    assert.equal((await call('POST', '/auth/password', { current_password: 'first-pass', new_password: 'second-pass' }, token)).status, 200);
+    assert.equal((await call('GET', '/auth/me', undefined, token)).status, 200, 'this device stays signed in');
+    assert.equal((await call('GET', '/auth/me', undefined, other)).status, 401, 'other devices are signed out');
+    assert.equal((await call('POST', '/auth/login', { email: 'riya@example.com', password: 'first-pass' })).status, 401);
+    assert.equal((await call('POST', '/auth/login', { email: 'riya@example.com', password: 'second-pass' })).status, 200);
+
+    const demo = (await call('POST', '/auth/login', { email: 'student@vivduck.test', password: 'quack-quack-1' })).body.token;
+    assert.equal((await call('PATCH', '/auth/me', { name: 'Hacked' }, demo)).status, 403);
+    assert.equal((await call('POST', '/auth/password', { current_password: 'quack-quack-1', new_password: 'locked-out' }, demo)).status, 403);
+  } finally {
+    await close();
   }
 });
 

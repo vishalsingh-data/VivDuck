@@ -34,6 +34,21 @@ class AppUser {
 
   bool get isTeacher => role == UserRole.teacher;
 
+  /// Up to two initials for the avatar: "Ms. Rivera" → "MR".
+  String get initials => name
+      .split(' ')
+      .where((p) => p.isNotEmpty)
+      .take(2)
+      .map((p) => p[0].toUpperCase())
+      .join();
+
+  /// The shared demo logins, which can't be renamed or have their password
+  /// changed (contract 11).
+  bool get isDemoAccount => id.startsWith('u_demo_');
+
+  AppUser copyWith({String? name}) =>
+      AppUser(id: id, name: name ?? this.name, email: email, role: role);
+
   factory AppUser.fromJson(Map<String, dynamic> j) => AppUser(
     id: j['id'] as String,
     name: j['name'] as String,
@@ -69,6 +84,15 @@ abstract class AuthBackend {
     required UserRole role,
     String? inviteCode,
   });
+
+  /// Contract 11. [token] and [user] are the signed-in session.
+  Future<AppUser> updateName(String token, AppUser user, String name);
+  Future<void> changePassword(
+    String token,
+    AppUser user,
+    String current,
+    String next,
+  );
 }
 
 /// Holds the signed-in user and persists the session across restarts.
@@ -124,6 +148,19 @@ class Auth extends ValueNotifier<AppUser?> {
 
   bool get isDemo => _backend is MockAuthBackend;
 
+  Future<AppUser> updateName(String name) async {
+    final user = await _backend.updateName(_token ?? '', value!, name.trim());
+    value = user;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kUser, jsonEncode(user.toJson()));
+    } catch (_) {}
+    return user;
+  }
+
+  Future<void> changePassword(String current, String next) =>
+      _backend.changePassword(_token ?? '', value!, current, next);
+
   /// One-tap demo accounts (demo mode only; empty against a real backend).
   Future<List<({String email, String password, UserRole role})>>
   demoAccounts() async {
@@ -157,15 +194,28 @@ class HttpAuthBackend implements AuthBackend {
   final String base;
   HttpAuthBackend(this.base);
 
-  Future<AuthResult> _post(String path, Map<String, dynamic> body) async {
+  Future<AuthResult> _post(String path, Map<String, dynamic> body) async =>
+      AuthResult.fromJson(await _send('POST', path, body));
+
+  Future<Map<String, dynamic>> _send(
+    String method,
+    String path,
+    Map<String, dynamic> body, {
+    String? token,
+  }) async {
     http.Response res;
     try {
-      res = await http
-          .post(
-            Uri.parse('${base.replaceAll(RegExp(r'/$'), '')}$path'),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode(body),
-          )
+      final req =
+          http.Request(
+              method,
+              Uri.parse('${base.replaceAll(RegExp(r'/$'), '')}$path'),
+            )
+            ..headers['Content-Type'] = 'application/json'
+            ..body = jsonEncode(body);
+      if (token != null) req.headers['Authorization'] = 'Bearer $token';
+      res = await req
+          .send()
+          .then(http.Response.fromStream)
           .timeout(const Duration(seconds: 30));
     } catch (_) {
       throw const ApiException(
@@ -177,7 +227,7 @@ class HttpAuthBackend implements AuthBackend {
       json = jsonDecode(res.body) as Map<String, dynamic>;
     } catch (_) {}
     if (res.statusCode >= 200 && res.statusCode < 300 && json != null) {
-      return AuthResult.fromJson(json);
+      return json;
     }
     throw ApiException(
       json?['error'] as String? ?? 'Something went wrong (${res.statusCode}).',
@@ -203,6 +253,24 @@ class HttpAuthBackend implements AuthBackend {
     'role': role.name,
     if (inviteCode != null && inviteCode.isNotEmpty) 'invite_code': inviteCode,
   });
+
+  @override
+  Future<AppUser> updateName(String token, AppUser user, String name) async =>
+      AppUser.fromJson(
+        (await _send('PATCH', '/auth/me', {'name': name}, token: token))['user']
+            as Map<String, dynamic>,
+      );
+
+  @override
+  Future<void> changePassword(
+    String token,
+    AppUser user,
+    String current,
+    String next,
+  ) => _send('POST', '/auth/password', {
+    'current_password': current,
+    'new_password': next,
+  }, token: token);
 }
 
 /// Demo-mode accounts: seeded from assets/fixtures/demo_accounts.json, plus
@@ -272,6 +340,55 @@ class MockAuthBackend implements AuthBackend {
     return AuthResult(_token(), user);
   }
 
+  static const _demoLocked = ApiException(
+    "Demo accounts are shared, so their name and password can't be changed.",
+    status: 403,
+  );
+
+  Future<_MockAccount> _account(AppUser user) async {
+    if (user.isDemoAccount) throw _demoLocked;
+    final match = (await _load()).where((a) => a.user.id == user.id);
+    if (match.isEmpty) {
+      throw const ApiException('Please sign in first.', status: 401);
+    }
+    return match.first;
+  }
+
+  @override
+  Future<AppUser> updateName(String token, AppUser user, String name) async {
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (name.isEmpty) {
+      throw const ApiException('Please enter your name.', status: 400);
+    }
+    final a = await _account(user);
+    a.user = a.user.copyWith(name: name);
+    return a.user;
+  }
+
+  @override
+  Future<void> changePassword(
+    String token,
+    AppUser user,
+    String current,
+    String next,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (next.length < 8) {
+      throw const ApiException(
+        'The new password needs at least 8 characters.',
+        status: 400,
+      );
+    }
+    final a = await _account(user);
+    if (a.password != current) {
+      throw const ApiException(
+        "Your current password isn't right.",
+        status: 401,
+      );
+    }
+    a.password = next;
+  }
+
   /// Demo accounts for the one-tap buttons on the login screen.
   Future<List<({String email, String password, UserRole role})>>
   demoAccounts() async {
@@ -284,7 +401,7 @@ class MockAuthBackend implements AuthBackend {
 }
 
 class _MockAccount {
-  final AppUser user;
-  final String password;
+  AppUser user;
+  String password;
   _MockAccount(this.user, this.password);
 }
